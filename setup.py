@@ -18,13 +18,13 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
 
-    name='isONclust',  # Required
+    name='NGSpeciesID',  # Required
     version='0.0.6',  # Required
     description='De novo clustering of long-read transcriptome reads.',  # Required
     long_description=long_description,  # Optional
-    url='https://github.com/ksahlin/isONclust',  # Optional
+    url='https://github.com/ksahlin/NGSpeciesID',  # Optional
     author='Kristoffer Sahlin',  # Optional
-    author_email='kxs624@psu.edu',  # Optional
+    author_email='ksahlin@math.su.se',  # Optional
 
     # Classifiers help users find your project by categorizing it.
     #
@@ -54,7 +54,7 @@ setup(
         'Programming Language :: Python :: 3.7',
     ],
 
-    keywords='Iso-Seq CCS PacBio Oxford Nanopore Technologies transcript long-read',  # Optional
+    keywords='vilar sequeces ONT Oxford Nanopore Technologies transcript long reads',  # Optional
 
     # You can just specify package directories manually here if your project is
     # simple. Or you can use find_packages().
@@ -100,5 +100,5 @@ setup(
     #         'IsoCon=IsoCon.__main__()',
     #     ],
     # },
-    scripts=['isONclust'],
+    scripts=['NGSpeciesID'],
 )
