@@ -15,8 +15,6 @@ Table of Contents
     * [Dependencies](#Dependencies)
     * [Testing installation](#testing-installation)
   * [USAGE](#USAGE)
-    * [Iso-Seq](#Iso-Seq)
-    * [Oxford Nanopore](#Oxford-Nanopore)
     * [Output](#Output)
     * [Parameters](#Parameters)
   * [CREDITS](#CREDITS)
