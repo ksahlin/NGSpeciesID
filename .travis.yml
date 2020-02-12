@@ -1,11 +1,28 @@
 language: python
 python:
+  - "3.4"
+  - "3.5"
   - "3.6"
-  - "3.6-dev"  # 3.6 development branch
   - "3.7"
+  - "3.8"
+  
+before_install:
+
+  # Here we just install Miniconda, which you shouldn't have to change.
+
+  - wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
+  - chmod +x miniconda.sh
+  - ./miniconda.sh -b
+  - export PATH=/home/travis/miniconda2/bin:$PATH
+  - conda update --yes conda
+
 # command to install dependencies
 install:
+  - conda create --yes -n NGSpeciesID python=$TRAVIS_PYTHON_VERSION pip 
+  - source activate NGSpeciesID
   - pip install NGSpeciesID
+  - conda install --yes -c bioconda medaka
+
   # - pip install coveralls
 # os:
 #   - linux
@@ -16,6 +33,7 @@ branches:
   - master
   # - develop
 # command to run tests
-script: python NGSpeciesID --help 
+script: 
+      - python NGSpeciesID --help
 # after_success:
 #  - coveralls
