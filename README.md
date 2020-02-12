@@ -3,16 +3,13 @@ NGSpeciesID
 
 NGSpeciesID is a tool for clustering and consensus forming of targeted ONT reads. This repository is a modified version of [isONclust](https://github.com/ksahlin/isONclust), where consensus and polishing feautures have been added.
 
-NGSpeciesID is distributed as a python package supported on Linux / OSX with python v>=3.4. [![Build Status](https://travis-ci.org/ksahlin/NGSpeciesID.svg?branch=master)](https://travis-ci.org/ksahlin/NGSpeciesID).
+NGSpeciesID is distributed as a python package supported on Linux / OSX with python v3.6. [![Build Status](https://travis-ci.org/ksahlin/NGSpeciesID.svg?branch=master)](https://travis-ci.org/ksahlin/NGSpeciesID).
 
 Table of Contents
 =================
 
   * [INSTALLATION](#INSTALLATION)
     * [Using conda](#Using-conda)
-    * [Using pip](#Using-pip)
-    * [Downloading source from GitHub](#Downloading-source-from-github)
-    * [Dependencies](#Dependencies)
     * [Testing installation](#testing-installation)
   * [USAGE](#USAGE)
     * [Output](#Output)
@@ -25,7 +22,6 @@ Table of Contents
 INSTALLATION
 ----------------
 
-**Currently [medaka](https://github.com/nanoporetech/medaka) needs to be installed separately.**
 
 ### Using conda
 Conda is the preferred way to install NGSpeciesID.
@@ -33,7 +29,7 @@ Conda is the preferred way to install NGSpeciesID.
 1. Create and activate a new environment called NGSpeciesID
 
 ```
-conda create -n NGSpeciesID python=3 pip 
+conda create -n NGSpeciesID python=3.6 pip 
 source activate NGSpeciesID
 ```
 
@@ -41,6 +37,7 @@ source activate NGSpeciesID
 
 ```
 pip install NGSpeciesID
+conda install --yes -c bioconda medaka
 ```
 3. You should now have 'NGSpeciesID' installed; try it:
 ```
@@ -54,32 +51,7 @@ source activate NGSpeciesID
 
 4. Install [medaka](https://github.com/nanoporetech/medaka).
 
-### Using pip 
 
-To install NGSpeciesID, run:
-```
-pip install  NGSpeciesID
-```
-`pip` will install the dependencies automatically for you. `pip` is pythons official package installer and is included in most python versions. If you do not have `pip`, it can be easily installed [from here](https://pip.pypa.io/en/stable/installing/) and upgraded with `pip install --upgrade pip`. 
-
-
-### Downloading source from GitHub
-
-#### Dependencies
-
-Make sure the below listed dependencies are installed (installation links below). Versions in parenthesis are suggested as NGSpeciesID has not been tested with earlier versions of these libraries. However, NGSpeciesID may also work with earliear versions of these libaries.
-* [parasail](https://github.com/jeffdaily/parasail-python)
-* [pysam](http://pysam.readthedocs.io/en/latest/installation.html) (>= v0.11)
-
-In addition, please make sure you use python version >=3.4. NGSpeciesID will not work with python 2.
-
-With these dependencies installed. Run
-
-```sh
-git clone https://github.com/ksahlin/NGSpeciesID.git
-cd NGSpeciesID
-./NGSpeciesID
-```
 
 ### Testing installation
 
