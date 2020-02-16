@@ -37,7 +37,7 @@ source activate NGSpeciesID
 
 ```
 pip install NGSpeciesID
-conda install --yes -c conda-forge -c bioconda medaka openblas==0.3.3
+conda install --yes -c conda-forge -c bioconda medaka openblas==0.3.3 spoa
 ```
 3. You should now have 'NGSpeciesID' installed; try it:
 ```

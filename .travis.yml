@@ -17,8 +17,8 @@ install:
   - conda create --yes -n NGSpeciesID python=$TRAVIS_PYTHON_VERSION pip 
   - source activate NGSpeciesID
   - pip install NGSpeciesID
-  - conda install --yes -c conda-forge -c bioconda medaka openblas==0.3.3
-  
+  - conda install --yes -c conda-forge -c bioconda medaka openblas==0.3.3 spoa
+
 
 
   # - pip install coveralls
