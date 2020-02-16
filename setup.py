@@ -19,8 +19,8 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 setup(
 
     name='NGSpeciesID',  # Required
-    version='0.0.8',  # Required
-    description='De novo clustering of long-read transcriptome reads.',  # Required
+    version='0.0.8.1',  # Required
+    description='Reconstructs viral consensus sequences from a set of ONT reads.',  # Required
     long_description=long_description,  # Optional
     url='https://github.com/ksahlin/NGSpeciesID',  # Optional
     author='Kristoffer Sahlin',  # Optional
@@ -54,7 +54,7 @@ setup(
         'Programming Language :: Python :: 3.7',
     ],
 
-    keywords='vilar sequeces ONT Oxford Nanopore Technologies transcript long reads',  # Optional
+    keywords='viral sequeces ONT Oxford Nanopore Technologies long reads',  # Optional
 
     # You can just specify package directories manually here if your project is
     # simple. Or you can use find_packages().
@@ -94,10 +94,10 @@ setup(
     # "scripts" keyword. Entry points provide cross-platform support and allow
     # `pip` to create the appropriate form of executable for the target
     # platform.
-    # entry_points={  # Optional
-    #     'console_scripts': [
-    #         'IsoCon=IsoCon.__main__()',
-    #     ],
-    # },
+    entry_points={  # Optional
+        'console_scripts': [
+            'NGSpeciesID=NGSpeciesID.__main__()',
+        ],
+    },
     scripts=['NGSpeciesID'],
 )
