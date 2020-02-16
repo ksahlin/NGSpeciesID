@@ -17,7 +17,8 @@ install:
   - conda create --yes -n NGSpeciesID python=$TRAVIS_PYTHON_VERSION pip 
   - source activate NGSpeciesID
   - pip install NGSpeciesID
-  - conda install --yes -c bioconda medaka spoa
+  - conda install --yes -c conda-forge -c bioconda medaka openblas==0.3.3
+  
 
 
   # - pip install coveralls
@@ -31,7 +32,7 @@ branches:
   # - develop
 # command to run tests
 script: 
-      - NGSpeciesID --help
-      - NGSpeciesID --ont  --fastq  test/terncytb_200.fastq --outfolder  ~/tmp/terncytb_200 --consensus --medaka
+      - python NGSpeciesID --help
+      - python NGSpeciesID --ont  --fastq  test/terncytb_200.fastq --outfolder  ~/tmp/terncytb_200 --consensus --medaka
 # after_success:
 #  - coveralls

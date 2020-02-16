@@ -19,7 +19,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 setup(
 
     name='NGSpeciesID',  # Required
-    version='0.0.8.1',  # Required
+    version='0.0.8.3',  # Required
     description='Reconstructs viral consensus sequences from a set of ONT reads.',  # Required
     long_description=long_description,  # Optional
     url='https://github.com/ksahlin/NGSpeciesID',  # Optional
@@ -94,10 +94,10 @@ setup(
     # "scripts" keyword. Entry points provide cross-platform support and allow
     # `pip` to create the appropriate form of executable for the target
     # platform.
-    entry_points={  # Optional
-        'console_scripts': [
-            'NGSpeciesID=NGSpeciesID.__main__()',
-        ],
-    },
+    # entry_points={  # Optional
+    #     'console_scripts': [
+    #         'NGSpeciesID=NGSpeciesID:main()',
+    #     ],
+    # },
     scripts=['NGSpeciesID'],
 )
