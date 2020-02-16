@@ -37,7 +37,7 @@ source activate NGSpeciesID
 
 ```
 pip install NGSpeciesID
-conda install --yes -c bioconda medaka
+conda install --yes -c bioconda medaka spoa
 ```
 3. You should now have 'NGSpeciesID' installed; try it:
 ```

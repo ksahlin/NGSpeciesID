@@ -19,7 +19,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 setup(
 
     name='NGSpeciesID',  # Required
-    version='0.0.7',  # Required
+    version='0.0.8',  # Required
     description='De novo clustering of long-read transcriptome reads.',  # Required
     long_description=long_description,  # Optional
     url='https://github.com/ksahlin/NGSpeciesID',  # Optional
@@ -75,8 +75,7 @@ setup(
     #
     # For an analysis of "install_requires" vs pip's requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['spoa>=v1.1.5',
-                      'parasail>=1.1.11'],  # Optional
+    install_requires=['parasail>=1.1.11'],  # Optional
     # dependency_links=[], # Optional
     # List additional groups of dependencies here (e.g. development
     # dependencies). Users will be able to install these using the "extras"
