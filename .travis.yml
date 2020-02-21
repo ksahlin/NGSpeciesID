@@ -33,6 +33,6 @@ branches:
 # command to run tests
 script: 
       - python NGSpeciesID --help
-      - python NGSpeciesID --ont  --fastq  test/terncytb_200.fastq --outfolder  ~/tmp/terncytb_200 --consensus --medaka
+      - python NGSpeciesID --ont  --fastq  test/sample_h1.fastq --outfolder  ~/tmp/sample_h1 --consensus --medaka
 # after_success:
 #  - coveralls

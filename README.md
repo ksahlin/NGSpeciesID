@@ -55,8 +55,11 @@ source activate NGSpeciesID
 
 ### Testing installation
 
-**TBD**
+Assuming you are in the NGSpeciesID directory, you can try the installation with
 
+``` 
+python NGSpeciesID --ont  --fastq  test/sample_h1.fastq --outfolder  ~/tmp/sample_h1 --consensus --medaka
+```
 
 
 USAGE
