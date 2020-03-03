@@ -22,6 +22,7 @@ Table of Contents
 INSTALLATION
 ----------------
 
+**NOTE**: If you are experinencing issues (e.g. [this one](https://github.com/rvaser/spoa/issues/26)) with the third party tools  [spoa](https://github.com/rvaser/spoa) or [medaka](https://github.com/nanoporetech/medaka) in the all-in-one installation instructions below, please install the tools manually with their respective installation instructions [here](https://github.com/rvaser/spoa#installation) and [here](https://github.com/nanoporetech/medaka#installation).  
 
 ### Using conda
 Conda is the preferred way to install NGSpeciesID.
