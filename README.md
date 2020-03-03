@@ -30,7 +30,7 @@ Conda is the preferred way to install NGSpeciesID.
 
 ```
 conda create -n NGSpeciesID python=3.6 pip 
-source activate NGSpeciesID
+conda activate NGSpeciesID
 ```
 
 2. Install NGSpeciesID 
@@ -46,10 +46,8 @@ NGSpeciesID --help
 
 Upon start/login to your server/computer you need to activate the conda environment "NGSpeciesID" to run NGSpeciesID as:
 ```
-source activate NGSpeciesID
+conda activate NGSpeciesID
 ```
-
-4. Install [medaka](https://github.com/nanoporetech/medaka).
 
 
 
