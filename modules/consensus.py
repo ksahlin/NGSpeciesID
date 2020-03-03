@@ -100,7 +100,11 @@ def run_medaka(reads_to_center, center, outfolder, cores, medaka_model):
         # print('Running medaka...', end=' ')
         stdout.flush()
         medaka_stderr = open(os.path.join(outfolder, "stderr.txt"), "w")
-        subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center, "-o", outfolder, "-t", cores, "-m", medaka_model], stdout=output_file, stderr=medaka_stderr)
+        if medaka_model:
+            subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center, "-o", outfolder, "-t", cores, "-m", medaka_model], stdout=output_file, stderr=medaka_stderr)
+        else:
+            subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center, "-o", outfolder, "-t", cores], stdout=output_file, stderr=medaka_stderr)
+
         # print('Done.')
         stdout.flush()
     output_file.close()
