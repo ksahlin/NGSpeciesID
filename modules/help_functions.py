@@ -2,6 +2,8 @@ import os
 import errno
 import re
 
+import edlib
+
 
 '''
     Below code taken from https://github.com/lh3/readfq/blob/master/readfq.py
@@ -92,3 +94,58 @@ def cigar_to_seq(cigar, query, ref):
             sys.exit()
 
     return  "".join([s for s in q_aln]), "".join([s for s in r_aln])
+
+def reverse_complement(string):
+    #rev_nuc = {'A':'T', 'C':'G', 'G':'C', 'T':'A', 'N':'N', 'X':'X'}
+    # Modified for Abyss output
+    rev_nuc = {'A':'T', 'C':'G', 'G':'C', 'T':'A', 'a':'t', 'c':'g', 'g':'c', 't':'a', 'N':'N', 'X':'X', 'n':'n', 'Y':'R', 'R':'Y', 'K':'M', 'M':'K', 'S':'S', 'W':'W', 'B':'V', 'V':'B', 'H':'D', 'D':'H', 'y':'r', 'r':'y', 'k':'m', 'm':'k', 's':'s', 'w':'w', 'b':'v', 'v':'b', 'h':'d', 'd':'h'}
+
+    rev_comp = ''.join([rev_nuc[nucl] for nucl in reversed(string)])
+    return(rev_comp)
+
+def read_barcodes(primer_file):
+    barcodes = {}
+    for i, line in enumerate(open(primer_file, "r")):
+        if i == 0:
+            continue
+        acc, FwIndex, FWPrimer, RvIndex, RvPrimer = line.split()
+        barcodes[acc+"_FwIndex_fwd"] = FwIndex.upper()
+        barcodes[acc+ "_RvIndex_fwd"] = RvIndex.upper()
+
+        FwIndex_rev = reverse_complement(FwIndex.upper())
+        RvIndex_rev = reverse_complement(RvIndex.upper())
+        barcodes[acc+"_FwIndex_rev"] = FwIndex_rev
+        barcodes[acc+ "_RvIndex_rev"] = RvIndex_rev
+
+    return barcodes
+
+
+def find_barcode_locations(center, barcodes, primer_max_ed):
+    "Find barcodes in a center using edlib"
+    all_locations = []
+    for primer_acc, primer_seq in barcodes.items():
+        # print(primer_acc, primer_seq,center)
+        result = edlib.align(primer_seq, center,
+                             mode="HW", task="locations", k=primer_max_ed)
+        ed = result["editDistance"]
+        locations = result["locations"]
+        print(locations, ed)
+        if locations:
+            all_locations.append((primer_acc, locations[0][0], locations[0][1]))
+    #     if locations:
+    #         # all_locations[primer_acc] = []
+    #         for refstart, refend in locations:
+    #             refend += 1
+    #             # ('Hit', 'Ref RefStart RefEnd Query QueryStart QueryEnd Score')
+    #             hit = Hit(read.Name, refstart, refend, primer_acc, 0,
+    #                       len(primer_seq),  ed / len(primer_seq))
+    #             all_locations.append(hit)
+    # refined_locations = refine_locations(read, all_primers, all_locations)
+    return all_locations
+
+
+
+
+
+
+
