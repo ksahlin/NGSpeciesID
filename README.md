@@ -22,7 +22,7 @@ Table of Contents
 INSTALLATION
 ----------------
 
-**NOTE**: If you are experinencing issues (e.g. [this one](https://github.com/rvaser/spoa/issues/26)) with the third party tools  [spoa](https://github.com/rvaser/spoa) or [medaka](https://github.com/nanoporetech/medaka) in the all-in-one installation instructions below, please install the tools manually with their respective installation instructions [here](https://github.com/rvaser/spoa#installation) and [here](https://github.com/nanoporetech/medaka#installation).  
+**NOTE**: If you are experiencing issues (e.g. [this one](https://github.com/rvaser/spoa/issues/26)) with the third party tools  [spoa](https://github.com/rvaser/spoa) or [medaka](https://github.com/nanoporetech/medaka) in the all-in-one installation instructions below, please install the tools manually with their respective installation instructions [here](https://github.com/rvaser/spoa#installation) and [here](https://github.com/nanoporetech/medaka#installation).  
 
 ### Using conda
 Conda is the preferred way to install NGSpeciesID.
@@ -38,7 +38,7 @@ conda activate NGSpeciesID
 
 ```
 pip install NGSpeciesID
-conda install --yes -c conda-forge -c bioconda medaka==0.11.5 openblas==0.3.3 spoa
+conda install --yes -c conda-forge -c bioconda medaka==0.11.5 openblas==0.3.3 spoa racon minimap2
 ```
 3. You should now have 'NGSpeciesID' installed; try it:
 ```
@@ -72,13 +72,20 @@ NGSpeciesID --ont --consensus --medaka --fastq [reads.fastq] --outfolder [/path/
 The argument `--ont` simply means `--k 13 --w 20`. These arguments can be set manually without the `--ont` flag. Specify number of cores with `--t`. 
 
 
+NGSpeciesID can also run with racon as polisher. For example
+
+```
+NGSpeciesID --ont --consensus --racon --racon_iter 3 --fastq [reads.fastq] --outfolder [/path/to/output] 
+```
+will polish the consensus sequences with racon three times.
+
 ### Output
 
-The output consists of clustering and consensus information.
+The output consists of the polished consensus sequences along with some information about clustering.
 
-* The final cluster information is given in a tsv file `final_clusters.tsv` present in the specified output folder.
+* Polished consensus sequence(s). A folder named “medaka_cl_id_X”[/"racon_cl_id_X"] is created for each predicted consensus. Each such folder contains a sequence “consensus.fasta” which is the final output of NGSpeciesID. 
 * Draft spoa consensus sequences of each of the clusters are given as consensus_reference_X.fasta (where X is a number).
-* A folder named “medaka_cl_id_X” is created for each spoa consensus. Each medaka outfolder contains medakas output, including the final polished consensus named (by medaka) as “consensus.fasta”.
+* The final cluster information is given in a tsv file `final_clusters.tsv` present in the specified output folder.
 
 
 In the cluster TSV-file, the first column is the cluster ID and the second column is the read accession. For example:

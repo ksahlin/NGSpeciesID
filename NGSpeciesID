@@ -142,39 +142,49 @@ def main(args):
                         else:
                             assert bc[-3:] == 'rev'
                             cut_end = start
-                    print(center)
+                    # print(center)
                     center = center[cut_start: cut_end]
-                    print(center, "NEW")
+                    # print(center, "NEW")
                     centers[i][2] = center
         print("{0} centers formed".format(len(centers)))
         centers_filtered = consensus.detect_reverse_complements(centers, args.rc_identity_threshold)
 
         # printing output from spoa and grouping reads
-        to_medaka = []
+        to_polishing = []
         for (nr_reads_in_cluster, c_id, center, all_reads) in centers_filtered:
             polished_outfile = os.path.join(args.outfolder, "consensus_reference_{0}.fasta".format(c_id))
             f = open(polished_outfile, "w")
             f.write(">{0}\n{1}\n".format("consensus_cl_id_{0}_total_supporting_reads_{1}".format(c_id, nr_reads_in_cluster), center))
             f.close()
             
-            all_reads_file = os.path.join(args.outfolder, "reads_to_consensus_{0}.fasta".format(c_id))
+            all_reads_file = os.path.join(args.outfolder, "reads_to_consensus_{0}.fastq".format(c_id))
             f = open(all_reads_file, "w")
             for fasta_file in all_reads: 
                 reads = { acc : (seq, qual) for acc, (seq, qual) in help_functions.readfq(open(fasta_file, 'r'))}
                 for acc, (seq, qual) in reads.items():
                     f.write("@{0}\n{1}\n{2}\n{3}\n".format(acc, seq, "+", qual))
             f.close()
-            to_medaka.append( (nr_reads_in_cluster, c_id, polished_outfile, all_reads_file) )
+            to_polishing.append( (nr_reads_in_cluster, c_id, polished_outfile, all_reads_file) )
         print("Saving spoa references to files:", os.path.join(args.outfolder, "consensus_reference_X.fasta"))
 
         if args.medaka:
             print("running medaka separately on each spoa reference.")
-            for (nr_reads_in_cluster, c_id, center_file, all_reads_file) in to_medaka:
-                medaka_outfolder = os.path.join(args.outfolder, "medaka_cl_id_{0}".format(c_id))
-                help_functions.mkdir_p(medaka_outfolder)
-                consensus.run_medaka(all_reads_file, center_file, medaka_outfolder, "1", args.medaka_model)
+            for (nr_reads_in_cluster, c_id, center_file, all_reads_file) in to_polishing:
+                polishing_outfolder = os.path.join(args.outfolder, "medaka_cl_id_{0}".format(c_id))
+                help_functions.mkdir_p(polishing_outfolder)
+                consensus.run_medaka(all_reads_file, center_file, polishing_outfolder, "1", args.medaka_model)
             # consensus.run_medaka( " medaka_consensus -i ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5.fastq -d ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_isonclust/consensus_references.fasta -o ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_medaka/ -t 1 -m r941_min_high_g303")
             print("Saving medaka references to files:", os.path.join(args.outfolder, "medaka_cl_id_X/consensus.fasta"))
+        
+        elif args.racon:
+            print("running racon separately on each spoa reference.")
+            for (nr_reads_in_cluster, c_id, center_file, all_reads_file) in to_polishing:
+                polishing_outfolder = os.path.join(args.outfolder, "racon_cl_id_{0}".format(c_id))
+                help_functions.mkdir_p(polishing_outfolder)
+                consensus.run_racon(all_reads_file, center_file, polishing_outfolder, "1", args.racon_iter)
+            # consensus.run_medaka( " medaka_consensus -i ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5.fastq -d ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_isonclust/consensus_references.fasta -o ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_medaka/ -t 1 -m r941_min_high_g303")
+            print("Saving racon references to files:", os.path.join(args.outfolder, "racon_cl_id_X/consensus.fasta"))
+
         print("removing temporary workdir")
         f.close()
         shutil.rmtree(work_dir)
@@ -226,8 +236,13 @@ if __name__ == '__main__':
     parser.add_argument('--consensus', action="store_true", help='After clustering, (1) run spoa on all clusters, (2) detect reverse complements, (3) run medaka.')
     parser.add_argument('--abundance_ratio', type=float, default=0.1, help='Threshold for --consensus algorithm. Consider only clusters larger than a fraction of number of total reads (default 0.1)')
     parser.add_argument('--rc_identity_threshold', type=float, default=0.9, help='Threshold for --consensus algorithm. Define a reverse complement if identity is over this threshold (default 0.9)')
-    parser.add_argument('--medaka', action="store_true", help='Run final medaka polishing algorithm.')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--medaka', action="store_true", help='Run final medaka polishing algorithm.')
+    group.add_argument('--racon', action="store_true", help='Run final racon polishing algorithm.')
+
     parser.add_argument('--medaka_model', type=str, default="", help='Set specific medaka model.')
+    parser.add_argument('--racon_iter', type=int, default=2, help='Number of times to run racon iteratively')
+
     parser.add_argument('--primer_file', type=str, default="", help='Path to file with primers. Primers are removed after the spoa consensus step and before the revers complement detection.')
     parser.add_argument('--primer_max_ed', type=int, default=2, help='Threshold edit distance for finding bracore in spoa consensus')
     

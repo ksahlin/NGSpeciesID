@@ -17,7 +17,7 @@ install:
   - conda create --yes -n NGSpeciesID python=$TRAVIS_PYTHON_VERSION pip 
   - source activate NGSpeciesID
   - pip install NGSpeciesID
-  - conda install --yes -c conda-forge -c bioconda medaka openblas==0.3.3 spoa
+  - conda install --yes -c conda-forge -c bioconda medaka openblas==0.3.3 spoa racon minimap2
 
 
 
@@ -33,6 +33,7 @@ branches:
 # command to run tests
 script: 
       - python NGSpeciesID --help
-      - python NGSpeciesID --ont  --fastq  test/sample_h1.fastq --outfolder  ~/tmp/sample_h1 --consensus --medaka
+      - python NGSpeciesID --ont  --fastq  test/sample_h1.fastq --outfolder  ~/tmp/sample_h1_medaka --consensus --medaka
+      - python NGSpeciesID --ont  --fastq  test/sample_h1.fastq --outfolder  ~/tmp/sample_h1_racon --consensus --racon
 # after_success:
 #  - coveralls

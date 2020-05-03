@@ -129,7 +129,7 @@ def find_barcode_locations(center, barcodes, primer_max_ed):
                              mode="HW", task="locations", k=primer_max_ed)
         ed = result["editDistance"]
         locations = result["locations"]
-        print(locations, ed)
+        # print(locations, ed)
         if locations:
             all_locations.append((primer_acc, locations[0][0], locations[0][1]))
     #     if locations:

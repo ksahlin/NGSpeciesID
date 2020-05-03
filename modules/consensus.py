@@ -94,17 +94,37 @@ def run_spoa(reads, spoa_out_file, spoa_path):
     consensus = l[1].strip()
     return consensus
 
-def run_medaka(reads_to_center, center, outfolder, cores, medaka_model):
+def run_medaka(reads_to_center, center_file, outfolder, cores, medaka_model):
     medaka_stdout = os.path.join(outfolder, "stdout.txt")
     with open(medaka_stdout, "w") as output_file:
         # print('Running medaka...', end=' ')
         stdout.flush()
         medaka_stderr = open(os.path.join(outfolder, "stderr.txt"), "w")
         if medaka_model:
-            subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center, "-o", outfolder, "-t", cores, "-m", medaka_model], stdout=output_file, stderr=medaka_stderr)
+            subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center_file, "-o", outfolder, "-t", cores, "-m", medaka_model], stdout=output_file, stderr=medaka_stderr)
         else:
-            subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center, "-o", outfolder, "-t", cores], stdout=output_file, stderr=medaka_stderr)
+            subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center_file, "-o", outfolder, "-t", cores], stdout=output_file, stderr=medaka_stderr)
 
+        # print('Done.')
+        stdout.flush()
+    output_file.close()
+
+def run_racon(reads_to_center, center_file, outfolder, cores, racon_iter):
+    racon_stdout = os.path.join(outfolder, "stdout.txt")
+    with open(racon_stdout, "w") as output_file:
+        # print('Running medaka...', end=' ')
+        stdout.flush()
+        for i in range(racon_iter):
+            read_alignments = open(os.path.join(outfolder, "read_alignments_it_{0}.paf".format(i)), 'w')
+            mm2_stderr = open(os.path.join(outfolder, "mm2_stderr_it_{0}.txt".format(i)), "w")
+            racon_stderr = open(os.path.join(outfolder, "racon_stderr_it_{0}.txt".format(i)), "w")
+            racon_polished = open(os.path.join(outfolder, "racon_polished_it_{0}.fasta".format(i)), 'w')
+
+            subprocess.check_call(['minimap2', '-x', 'map-ont', center_file, reads_to_center], stdout=read_alignments, stderr=mm2_stderr)
+            subprocess.check_call(['racon', reads_to_center, read_alignments.name, center_file], stdout=racon_polished, stderr=racon_stderr)
+            center_file = racon_polished.name
+
+        shutil.copyfile(center_file, os.path.join(outfolder, "consensus.fasta"))
         # print('Done.')
         stdout.flush()
     output_file.close()
