@@ -108,15 +108,31 @@ def read_barcodes(primer_file):
     for i, line in enumerate(open(primer_file, "r")):
         if i == 0:
             continue
-        acc, FwIndex, FWPrimer, RvIndex, RvPrimer = line.split()
-        barcodes[acc+"_FwIndex_fwd"] = FwIndex.upper()
-        barcodes[acc+ "_RvIndex_fwd"] = RvIndex.upper()
+        # acc, FwIndex, FWPrimer, RvIndex, RvPrimer = line.split()
+        # barcodes[acc+"_FwIndex_fwd"] = FwIndex.upper()
+        # barcodes[acc+ "_RvIndex_fwd"] = RvIndex.upper()
 
-        FwIndex_rev = reverse_complement(FwIndex.upper())
-        RvIndex_rev = reverse_complement(RvIndex.upper())
+        # FwIndex_rev = reverse_complement(FwIndex.upper())
+        # RvIndex_rev = reverse_complement(RvIndex.upper())
+        # barcodes[acc+"_FwIndex_rev"] = FwIndex_rev
+        # barcodes[acc+ "_RvIndex_rev"] = RvIndex_rev
+
+        acc, FwIndex, FWPrimer, RvIndex, RvPrimer = line.split()
+        barcodes[acc+"_FwIndex_fwd"] = FWPrimer.upper()[:25]
+        barcodes[acc+ "_RvIndex_fwd"] = RvPrimer.upper()[:25]
+
+        FwIndex_rev = reverse_complement(FWPrimer.upper()[:25])
+        RvIndex_rev = reverse_complement(RvPrimer.upper()[:25])
         barcodes[acc+"_FwIndex_rev"] = FwIndex_rev
         barcodes[acc+ "_RvIndex_rev"] = RvIndex_rev
 
+    return barcodes
+
+def get_universal_tails():
+    barcodes = {'1_fwd' : 'TTTCTGTTGGTGCTGATATTGC',
+                 '2_fwd' : 'ACTTGCCTGTCGCTCTATCTTC'}
+    barcodes['1_rev'] = reverse_complement(barcodes['1_fwd'])
+    barcodes['2_rev'] = reverse_complement(barcodes['2_fwd'])
     return barcodes
 
 
@@ -131,7 +147,7 @@ def find_barcode_locations(center, barcodes, primer_max_ed):
         locations = result["locations"]
         # print(locations, ed)
         if locations:
-            all_locations.append((primer_acc, locations[0][0], locations[0][1]))
+            all_locations.append((primer_acc, locations[0][0], locations[0][1], ed))
     #     if locations:
     #         # all_locations[primer_acc] = []
     #         for refstart, refend in locations:
