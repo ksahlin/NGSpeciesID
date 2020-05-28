@@ -12,8 +12,8 @@ Table of Contents
     * [Using conda](#Using-conda)
     * [Testing installation](#testing-installation)
   * [USAGE](#USAGE)
+    * [Removing primers](#removing-primers)
     * [Output](#Output)
-    * [Parameters](#Parameters)
   * [CREDITS](#CREDITS)
   * [LICENCE](#LICENCE)
 
@@ -78,6 +78,36 @@ NGSpeciesID can also run with racon as polisher. For example
 NGSpeciesID --ont --consensus --racon --racon_iter 3 --fastq [reads.fastq] --outfolder [/path/to/output] 
 ```
 will polish the consensus sequences with racon three times.
+
+### Removing primers
+
+If customized primenrs are to be expected in the reads thay can be detected and removed. The primer file is expected to be in fasta format and an `_F` and `_R` is appended to the accession for the start and end primers respectively. The correct primer-file format is important for `NGSpeciesID` to infer how to trim the sequences. Here is an example:
+
+```
+>MCB869_ONT_R
+CGATCAATCCCCTAACAAACTAGG
+>MCB398_ONT_F
+TACCATGAGGACAAATATCATTCTG
+```
+
+In the primer-file the following should hold:
+
+1. F is the first/forward primer and R is the last or “rear/reverse" primer.
+2. However, both primers should be provided in the same direction (5’ to 3’) in this file, i.e., the 'R' primer should also be in 5' to 3' direction.
+3. The letters F and R occurs in the last position in the accession of the primers so that NGSpeciesID can parse these.
+
+Trimming of primers is performed after consensus forming and can be invoked as
+```
+NGSpeciesID --ont --consensus --medaka --fastq [reads.fastq] --outfolder [/path/to/output] --primer_file [primers.fa]
+```
+
+`NGSpeciesID` can also remove universal tails. Trimming of tails is performed after consensus forming and can be invoked as
+
+```
+NGSpeciesID --ont --consensus --medaka --fastq [reads.fastq] --outfolder [/path/to/output] --remove_universal_tails
+```
+
+The two options are mutually exclusive, i.e., only one of them can be run.
 
 ### Output
 

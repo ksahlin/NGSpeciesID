@@ -14,6 +14,7 @@ from modules import help_functions
 from modules import parallelize
 from modules import cluster
 from modules import consensus
+from modules import barcode_trimmer
 
 def single_clustering(read_array, p_emp_probs, args):
     start_cluster = time()
@@ -108,96 +109,31 @@ def main(args):
         print("STARTING TO CREATE CLUSTER CONSENSUS")
         print()
         work_dir = tempfile.mkdtemp()
-        print("Temporary workdirektory for polishing:", work_dir)
-        centers = []
-        reads = { acc : (seq, qual) for acc, (seq, qual) in help_functions.readfq(open(sorted_reads_fastq_file, 'r'))}
-        nr_reads = len(reads)
-        abundance_cutoff = int( args.abundance_ratio * nr_reads)
-        for c_id, all_read_acc in sorted(clusters.items(), key = lambda x: (len(x[1]),representatives[x[0]][5]), reverse=True):
-            reads_path = open(os.path.join(work_dir, "reads_c_id_{0}.fq".format(c_id)), "w")
-            nr_reads_in_cluster = len(all_read_acc)
-            if nr_reads_in_cluster >= abundance_cutoff:
-                for acc in all_read_acc:
-                    seq, qual = reads[acc]
-                    reads_path.write("@{0}\n{1}\n{2}\n{3}\n".format(acc, seq, "+", qual))
-                    # reads_path.write(">{0}\n{1}\n".format(str(q_id)+str(pos1)+str(pos2), seq))
-                reads_path.close()
-                # spoa_ref = create_augmented_reference.run_spoa(reads_path.name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
-                print("creating center of {0} sequences.".format(nr_reads_in_cluster))
-                center = consensus.run_spoa(reads_path.name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
-                centers.append( [nr_reads_in_cluster, c_id, center, reads_path.name])
+        print("Temporary workdirektory for consensus and polishing:", work_dir)
 
+        centers = consensus.form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, work_dir, args)
 
         if args.primer_file or args.remove_universal_tails:
             if args.remove_universal_tails:
                 print("Detecting and removing universal tails")
-                barcodes = help_functions.get_universal_tails()
+                barcodes = barcode_trimmer.get_universal_tails()
             else:
                 print("Detecting and removing primers")
-                barcodes = help_functions.read_barcodes(args.primer_file)
+                barcodes = barcode_trimmer.read_barcodes(args.primer_file)
 
-            for i, (nr_reads_in_cluster, c_id, center, reads_path_name) in enumerate(centers):
-                barcode_locations = help_functions.find_barcode_locations(center, barcodes, args.primer_max_ed) 
-                if barcode_locations:
-                    print("FOUND BARCODE", barcode_locations)
-                    cut_start = 0
-                    cut_end = len(center)
-                    for bc, start, stop, ed in barcode_locations:
-                        print(ed)
-                        if bc[-3:] == 'fwd':
-                            cut_start = stop
-                        else:
-                            assert bc[-3:] == 'rev'
-                            cut_end = start
-                    # print(center)
-                    center = center[cut_start: cut_end]
-                    print(center, "NEW")
-                    print("cut start", cut_start, "cut end", cut_end)
-                    centers[i][2] = center
-
+            barcode_trimmer.remove_barcodes(centers, barcodes, args)
 
         print("{0} centers formed".format(len(centers)))
         centers_filtered = consensus.detect_reverse_complements(centers, args.rc_identity_threshold)
+        centers_polished = consensus.polish_sequences(centers_filtered, args)
 
-        # printing output from spoa and grouping reads
-        to_polishing = []
-        for (nr_reads_in_cluster, c_id, center, all_reads) in centers_filtered:
-            # print('lol',c_id,center)
-            polished_outfile = os.path.join(args.outfolder, "consensus_reference_{0}.fasta".format(c_id))
-            f = open(polished_outfile, "w")
-            f.write(">{0}\n{1}\n".format("consensus_cl_id_{0}_total_supporting_reads_{1}".format(c_id, nr_reads_in_cluster), center))
-            f.close()
-            
-            all_reads_file = os.path.join(args.outfolder, "reads_to_consensus_{0}.fastq".format(c_id))
-            f = open(all_reads_file, "w")
-            for fasta_file in all_reads: 
-                reads = { acc : (seq, qual) for acc, (seq, qual) in help_functions.readfq(open(fasta_file, 'r'))}
-                for acc, (seq, qual) in reads.items():
-                    f.write("@{0}\n{1}\n{2}\n{3}\n".format(acc, seq, "+", qual))
-            f.close()
-            to_polishing.append( (nr_reads_in_cluster, c_id, polished_outfile, all_reads_file) )
-        print("Saving spoa references to files:", os.path.join(args.outfolder, "consensus_reference_X.fasta"))
+        if args.primer_file or args.remove_universal_tails: # check if barcode is found after polishing with medaka
+            barcode_trimmer.remove_barcodes(centers_polished, barcodes, args)
+            centers_filtered = consensus.detect_reverse_complements(centers_polished, args.rc_identity_threshold)
+            centers_polished = consensus.polish_sequences(centers_filtered, args)
 
-        if args.medaka:
-            print("running medaka separately on each spoa reference.")
-            for (nr_reads_in_cluster, c_id, center_file, all_reads_file) in to_polishing:
-                polishing_outfolder = os.path.join(args.outfolder, "medaka_cl_id_{0}".format(c_id))
-                help_functions.mkdir_p(polishing_outfolder)
-                consensus.run_medaka(all_reads_file, center_file, polishing_outfolder, "1", args.medaka_model)
-            # consensus.run_medaka( " medaka_consensus -i ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5.fastq -d ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_isonclust/consensus_references.fasta -o ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_medaka/ -t 1 -m r941_min_high_g303")
-            print("Saving medaka references to files:", os.path.join(args.outfolder, "medaka_cl_id_X/consensus.fasta"))
-        
-        elif args.racon:
-            print("running racon separately on each spoa reference.")
-            for (nr_reads_in_cluster, c_id, center_file, all_reads_file) in to_polishing:
-                polishing_outfolder = os.path.join(args.outfolder, "racon_cl_id_{0}".format(c_id))
-                help_functions.mkdir_p(polishing_outfolder)
-                consensus.run_racon(all_reads_file, center_file, polishing_outfolder, "1", args.racon_iter)
-            # consensus.run_medaka( " medaka_consensus -i ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5.fastq -d ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_isonclust/consensus_references.fasta -o ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_medaka/ -t 1 -m r941_min_high_g303")
-            print("Saving racon references to files:", os.path.join(args.outfolder, "racon_cl_id_X/consensus.fasta"))
 
         print("removing temporary workdir")
-        f.close()
         shutil.rmtree(work_dir)
 
 
