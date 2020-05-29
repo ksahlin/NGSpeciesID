@@ -81,7 +81,7 @@ will polish the consensus sequences with racon three times.
 
 ### Removing primers
 
-If customized primenrs are to be expected in the reads thay can be detected and removed. The primer file is expected to be in fasta format and an `_F` and `_R` is appended to the accession for the start and end primers respectively. The correct primer-file format is important for `NGSpeciesID` to infer how to trim the sequences. Here is an example:
+If customized primers are to be expected in the reads thay can be detected and removed. The primer file is expected to be in fasta format. Here is an example of a primer file:
 
 ```
 >MCB869_ONT_R
@@ -89,12 +89,8 @@ CGATCAATCCCCTAACAAACTAGG
 >MCB398_ONT_F
 TACCATGAGGACAAATATCATTCTG
 ```
+NGSpeciesID searches for primes in a window of Xbp (parameter, default 150bp) at the beginning and end of each consensus.
 
-In the primer-file the following should hold:
-
-1. F is the first/forward primer and R is the last or “rear/reverse" primer.
-2. However, both primers should be provided in the same direction (5’ to 3’) in this file, i.e., the 'R' primer should also be in 5' to 3' direction.
-3. The letters F and R occurs in the last position in the accession of the primers so that NGSpeciesID can parse these.
 
 Trimming of primers is performed after consensus forming and can be invoked as
 ```

@@ -50,29 +50,64 @@ def remove_barcodes(centers, barcodes, args):
         Modifies consensus sequences by copping of at barcode sites.
         This implies changing the datastructure centers with the modified consensus sequeces
     """
+    
     for i, (nr_reads_in_cluster, c_id, center, reads_path_name) in enumerate(centers):
-        barcode_locations = find_barcode_locations(center, barcodes, args.primer_max_ed) 
-        if barcode_locations:
-            print("FOUND BARCODE", barcode_locations)
-            cut_start = 0
-            cut_end = len(center)
-            print(center)
-            for bc, start, stop, ed in barcode_locations:
-                # print(ed,bc, bc[-4], bc[-2:])
-                if bc[-4] == 'F' and bc[-2:] == 'fw':
+
+        # if consensus is smaller than 2*trim_window we set trim window to half the sequence
+        if 2*args.trim_window > len(center):
+            trim_window = len(center)//2
+        else:
+            trim_window = args.trim_window
+
+        barcode_locations_beginning = find_barcode_locations(center[:trim_window], barcodes, args.primer_max_ed) 
+        barcode_locations_end = find_barcode_locations(center[-trim_window:], barcodes, args.primer_max_ed) 
+        print(center)
+        
+        cut_start = 0
+        if barcode_locations_beginning:
+            print("FOUND BARCODE BEGINNING", barcode_locations_beginning)
+            for bc, start, stop, ed in barcode_locations_beginning:
+                if stop > cut_start:
                     cut_start = stop
-                elif bc[-4] == 'R' and bc[-2:] == 'fw': 
-                    cut_end = start
-                elif bc[-4] == 'R' and bc[-2:] == 'rc':
-                    cut_start = stop
-                elif bc[-4] == 'F' and bc[-2:] == 'rc': 
-                    cut_end = start
-                else:
-                    print()
-                    print("Primer file not in correct format!")
-                    print()
-            # print(center)
-            center = center[cut_start: cut_end]
-            print(center, "NEW")
-            print("cut start", cut_start, "cut end", cut_end)
-            centers[i][2] = center
+            
+        cut_end = len(center)
+        if barcode_locations_end:
+            print("FOUND BARCODE END", barcode_locations_end)
+            earliest_hit = len(center)
+            for bc, start, stop, ed in barcode_locations_end:
+                if start < earliest_hit:
+                    earliest_hit = start
+            cut_end = len(center) - (trim_window - earliest_hit)
+        center = center[cut_start: cut_end]
+
+        print(center, "NEW")
+        print("cut start", cut_start, "cut end", cut_end)
+        centers[i][2] = center
+
+    ## Old code scanned all consensus and were prone to errors due to cutting directionality (befause of fwd or rev comp hits of the adapter)
+    # for i, (nr_reads_in_cluster, c_id, center, reads_path_name) in enumerate(centers):
+    #     barcode_locations = find_barcode_locations(center, barcodes, args.primer_max_ed) 
+    #     if barcode_locations:
+    #         print("FOUND BARCODE", barcode_locations)
+    #         cut_start = 0
+    #         cut_end = len(center)
+    #         print(center)
+    #         for bc, start, stop, ed in barcode_locations:
+    #             # print(ed,bc, bc[-4], bc[-2:])
+    #             if bc[-4] == 'F' and bc[-2:] == 'fw':
+    #                 cut_start = stop
+    #             elif bc[-4] == 'R' and bc[-2:] == 'fw': 
+    #                 cut_end = start
+    #             elif bc[-4] == 'R' and bc[-2:] == 'rc':
+    #                 cut_start = stop
+    #             elif bc[-4] == 'F' and bc[-2:] == 'rc': 
+    #                 cut_end = start
+    #             else:
+    #                 print()
+    #                 print("Primer file not in correct format!")
+    #                 print()
+    #         # print(center)
+    #         center = center[cut_start: cut_end]
+    #         print(center, "NEW")
+    #         print("cut start", cut_start, "cut end", cut_end)
+    #         centers[i][2] = center
