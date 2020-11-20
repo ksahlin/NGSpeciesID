@@ -165,7 +165,7 @@ def write_fastq(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="De novo clustering of long-read transcriptome reads", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(description="Reference-free clustering and consensus forming of targeted ONT reads", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--version', action='version', version='%(prog)s 0.1.0.0')
 
     parser.add_argument('--fastq', type=str,  default=False, help='Path to consensus fastq file(s)')

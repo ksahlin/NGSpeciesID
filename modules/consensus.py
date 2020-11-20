@@ -246,6 +246,7 @@ def form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, wor
     for c_id, all_read_acc in sorted(clusters.items(), key = lambda x: (len(x[1]),representatives[x[0]][5]), reverse=True):
         reads_path = open(os.path.join(work_dir, "reads_c_id_{0}.fq".format(c_id)), "w")
         nr_reads_in_cluster = len(all_read_acc)
+        # print("nr_reads_in_cluster", nr_reads_in_cluster)
         if nr_reads_in_cluster >= abundance_cutoff:
             for acc in all_read_acc:
                 seq, qual = reads[acc]

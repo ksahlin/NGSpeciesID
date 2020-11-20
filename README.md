@@ -60,6 +60,7 @@ Assuming you are in the NGSpeciesID directory, you can try the installation with
 python NGSpeciesID --ont  --fastq  test/sample_h1.fastq --outfolder  ~/tmp/sample_h1 --consensus --medaka
 ```
 
+If you do not have a test file `test/sample_h1.fastq` available in your local installation of NGSpeciesID, you can donwload it [here](https://github.com/ksahlin/NGSpeciesID/tree/master/test) (filesize 390kb).
 
 USAGE
 -------
