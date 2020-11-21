@@ -60,7 +60,17 @@ Assuming you are in the NGSpeciesID directory, you can try the installation with
 python NGSpeciesID --ont  --fastq  test/sample_h1.fastq --outfolder  ~/tmp/sample_h1 --consensus --medaka
 ```
 
-If you do not have a test file `test/sample_h1.fastq` available in your local installation of NGSpeciesID, you can donwload it [here](https://github.com/ksahlin/NGSpeciesID/tree/master/test) (filesize 390kb).
+If you do not have a test file `test/sample_h1.fastq` available in your local installation of NGSpeciesID, it is found [here](https://github.com/ksahlin/NGSpeciesID/tree/master/test) (filesize 390kb). You can also downlowad the file using the terminal on Linux or Mac OSx systems as
+
+```
+curl -O  https://github.com/ksahlin/NGSpeciesID/blob/master/test/sample_h1.fastq 
+```
+where the file will be downloaded to the folder that you are in, and be named `sample_h1.fastq`. Assuming you were in the NGSpeciesID directory when you downloaded the file, you can now run 
+
+``` 
+python NGSpeciesID --ont  --fastq  sample_h1.fastq --outfolder  ~/tmp/sample_h1 --consensus --medaka
+```
+
 
 USAGE
 -------
