@@ -54,21 +54,27 @@ conda activate NGSpeciesID
 
 ### Testing installation
 
-Assuming you are in the NGSpeciesID directory, you can try the installation with
-
-``` 
-python NGSpeciesID --ont  --fastq  test/sample_h1.fastq --outfolder  ~/tmp/sample_h1 --consensus --medaka
+0. Activate conda environment
+```
+conda activate NGSpeciesID
 ```
 
-If you do not have a test file `test/sample_h1.fastq` available in your local installation of NGSpeciesID, it is found [here](https://github.com/ksahlin/NGSpeciesID/tree/master/test) (filesize 390kb). You can also downlowad the file using the terminal on Linux or Mac OSx systems as
+1. Make a new directory and navigate to it
+```
+mkdir test_ngspeciesID
+cd test_ngspeciesID
+```
+
+2. Download the test fastq file called "sample_h1.fastq" (filesize 390kb)
 
 ```
-curl -O  https://github.com/ksahlin/NGSpeciesID/blob/master/test/sample_h1.fastq 
+curl -LO https://raw.githubusercontent.com/ksahlin/NGSpeciesID/master/test/sample_h1.fastq
 ```
-where the file will be downloaded to the folder that you are in, and be named `sample_h1.fastq`. Assuming you were in the NGSpeciesID directory when you downloaded the file, you can now run 
 
-``` 
-python NGSpeciesID --ont  --fastq  sample_h1.fastq --outfolder  ~/tmp/sample_h1 --consensus --medaka
+3. Run the NGSpecies command on test file. Outputs will be saved in "/test_ngspeciesID/sample_h1/", where the final polished consensus file ("consensus.fasta") is located in the "/test_ngspeciesID/sample_h1/medaka_cl_id_<cluster number>" directory.
+
+```
+NGSpeciesID --ont --fastq sample_h1.fastq --outfolder ./sample_h1 --consensus --medaka
 ```
 
 
