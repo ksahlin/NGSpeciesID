@@ -238,11 +238,9 @@ def polish_sequences(centers, args):
     return centers
 
 
-def form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, work_dir, args):
+def form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, work_dir, abundance_cutoff, args):
     centers = []
     reads = { acc : (seq, qual) for acc, (seq, qual) in help_functions.readfq(open(sorted_reads_fastq_file, 'r'))}
-    nr_reads = len(reads)
-    abundance_cutoff = int( args.abundance_ratio * nr_reads)
     for c_id, all_read_acc in sorted(clusters.items(), key = lambda x: (len(x[1]),representatives[x[0]][5]), reverse=True):
         reads_path = open(os.path.join(work_dir, "reads_c_id_{0}.fq".format(c_id)), "w")
         nr_reads_in_cluster = len(all_read_acc)
