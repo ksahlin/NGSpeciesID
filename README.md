@@ -12,6 +12,7 @@ Table of Contents
     * [Using conda](#Using-conda)
     * [Testing installation](#testing-installation)
   * [USAGE](#USAGE)
+    * [Filtering and subsampling](#filtering-and-subsampling)
     * [Removing primers](#removing-primers)
     * [Output](#Output)
   * [CREDITS](#CREDITS)
@@ -96,14 +97,12 @@ NGSpeciesID --ont --consensus --racon --racon_iter 3 --fastq [reads.fastq] --out
 ```
 will polish the consensus sequences with racon three times.
 
-### Filtering and subsampling of reads
+### Filtering and subsampling
 
 NGSpeciesID employs quality filtering of the reads based on read Phred scores. However, we recommend also removing reads much shorter or longer than the intended target, which often represent chimeras or contaminations. This can be done by specifying the `--m (intended target length)` and `--s (maximum deviation from target length)`. NGSpeciesID also has the feature of subsampling reads using parameter `--sample_size`. Altogether, if we want to filter out reads outside the length interval [700,800] and using a subset of 300 reads (if the dataset consists of more reads) we could run
 
 ```
-NGSpeciesID --ont --consensus --medaka --fastq [reads.fastq] 
-            --outfolder [/path/to/output]
-            --sample_size 300 --m 750 --s 50
+NGSpeciesID --ont --sample_size 300 --m 750 --s 50 --consensus --medaka --fastq [reads.fastq] --outfolder [/path/to/output]
 ```
 
 By default, length filtering and subsampling are not invoked if parameters are not specified.
