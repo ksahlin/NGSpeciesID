@@ -15,7 +15,7 @@ Table of Contents
     * [Filtering and subsampling](#filtering-and-subsampling)
     * [Removing primers](#removing-primers)
     * [Output](#Output)
-  * [EXAMPLE WORKFLOW](#WORKFLOW)
+  * [EXAMPLE WORKFLOW](#EXAMPLE-WORKFLOW)
   * [CREDITS](#CREDITS)
   * [LICENCE](#LICENCE)
 
