@@ -219,6 +219,8 @@ qcat -b demultiplexed_files -f sequencing_reads.fastq -trim
 
 B6 | Read filtering, clustering, consensus generation and polishing with NGSpeciesID
 
+For a single sample:
+
 ```
 NGSpeciesID --ont --consensus --sample_size 500 --m 400 --s 50 --medaka --fastq barcode0.fastq --outfolder barcode0_consensus
 ```
@@ -233,7 +235,7 @@ Here, the parameters are set as:
 - the input file of demultiplexed reads is specified by `--fastq`
 - the output consensus files will be saved to `--outfolder`
 
-To run this step on more than one sample, use a bash script with a for loop:
+To run this step on **more than one sample**, use a bash script with a for loop:
 
 ```
 for all files in *.fastq; do
