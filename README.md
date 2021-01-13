@@ -1,7 +1,7 @@
 NGSpeciesID
 ===========
 
-NGSpeciesID is a tool for clustering and consensus forming of targeted ONT reads. This repository is a modified version of [isONclust](https://github.com/ksahlin/isONclust), where consensus and polishing feautures have been added.
+NGSpeciesID is a tool for clustering and consensus forming of long-read amplicon sequencing data (has been used with both PacBio and Oxford Nanopore data). The repository is a modified version of [isONclust](https://github.com/ksahlin/isONclust), where consensus, primer-removal, and polishing feautures have been added.
 
 NGSpeciesID is distributed as a python package supported on Linux / OSX with python v3.6. [![Build Status](https://travis-ci.org/ksahlin/NGSpeciesID.svg?branch=master)](https://travis-ci.org/ksahlin/NGSpeciesID).
 
@@ -280,7 +280,7 @@ CREDITS
 
 Please cite [1] when using NGSpeciesID.
 
-1. TBA
+1. Sahlin, K, Lim, MCW, Prost, S. NGSpeciesID: DNA barcode and amplicon consensus generation from long‐read sequencing data. Ecol Evol. 2021; 00: 1– 7. https://doi.org/10.1002/ece3.7146
 
 
 
