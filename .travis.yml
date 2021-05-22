@@ -17,7 +17,7 @@ install:
   - conda create --yes -n NGSpeciesID python=$TRAVIS_PYTHON_VERSION pip 
   - source activate NGSpeciesID
   - pip install NGSpeciesID
-  - conda install --yes -c conda-forge -c bioconda medaka openblas==0.3.3 spoa racon minimap2
+  - conda install --yes -c bioconda medaka==0.11.5 openblas==0.3.3 spoa racon minimap2
 
 
 
