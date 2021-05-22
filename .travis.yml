@@ -6,12 +6,11 @@ before_install:
 
   # Here we just install Miniconda, which you shouldn't have to change.
 
-  - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh;
-  - bash miniconda.sh -b -p $HOME/miniconda
-  - source "$HOME/miniconda/etc/profile.d/conda.sh"
-  - hash -r
-  - conda config --set always_yes yes --set changeps1 no
-  - conda update -q conda
+  - wget http://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+  - chmod +x miniconda.sh
+  - ./miniconda.sh -b
+  - export PATH=/home/travis/miniconda2/bin:$PATH
+  - conda update --yes conda
   # Useful for debugging any issues with conda
   - conda info -a
 
@@ -19,8 +18,9 @@ before_install:
 install:
   - conda create --yes -n NGSpeciesID python=$TRAVIS_PYTHON_VERSION pip 
   - source activate NGSpeciesID
-  - pip install NGSpeciesID
   - conda install --yes -c conda-forge -c bioconda medaka=0.11.5 openblas==0.3.3 spoa racon minimap2
+  - pip install NGSpeciesID
+
 
 
 
