@@ -32,11 +32,24 @@ def get_universal_tails():
 
 def find_barcode_locations(center, barcodes, primer_max_ed):
     "Find barcodes in a center using edlib"
+    
+    # Creation of a IUPAC equivalence map for edlib to allow IUPAC code in primers
+    # The IUPAC map was created with:
+    # from Bio.Data import IUPACData
+    # IUPAC_map = [(i, k) for i, j in IUPACData.ambiguous_dna_values.items() for k in j]
+    IUPAC_map = [('A', 'A'), ('C', 'C'), ('G', 'G'), ('T', 'T'), ('M', 'A'), ('M', 'C'),
+                 ('R', 'A'), ('R', 'G'), ('W', 'A'), ('W', 'T'), ('S', 'C'), ('S', 'G'),
+                 ('Y', 'C'), ('Y', 'T'), ('K', 'G'), ('K', 'T'), ('V', 'A'), ('V', 'C'),
+                 ('V', 'G'), ('H', 'A'), ('H', 'C'), ('H', 'T'), ('D', 'A'), ('D', 'G'),
+                 ('D', 'T'), ('B', 'C'), ('B', 'G'), ('B', 'T'), ('X', 'G'), ('X', 'A'),
+                 ('X', 'T'), ('X', 'C'), ('N', 'G'), ('N', 'A'), ('N', 'T'), ('N', 'C')]
     all_locations = []
     for primer_acc, primer_seq in barcodes.items():
         # print(primer_acc, primer_seq,center)
+        # Add additionalEqualities=IUPAC_map allow edlib to understand IUPAC code
         result = edlib.align(primer_seq, center,
-                             mode="HW", task="locations", k=primer_max_ed)
+                             mode="HW", task="locations", k=primer_max_ed,
+                             additionalEqualities=IUPAC_map)
         ed = result["editDistance"]
         locations = result["locations"]
         print(locations, ed)
