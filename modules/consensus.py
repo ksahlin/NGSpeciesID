@@ -209,7 +209,8 @@ def polish_sequences(centers, args):
         for fasta_file in all_reads: 
             reads = { acc : (seq, qual) for acc, (seq, qual) in help_functions.readfq(open(fasta_file, 'r'))}
             for acc, (seq, qual) in reads.items():
-                f.write("@{0}\n{1}\n{2}\n{3}\n".format(acc, seq, "+", qual))
+                acc_tmp = acc.split()[0]
+                f.write("@{0}\n{1}\n{2}\n{3}\n".format(acc_tmp, seq, "+", qual))
         f.close()
         # to_polishing.append( (nr_reads_in_cluster, c_id, spoa_center_file, all_reads_file) )
 

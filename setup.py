@@ -19,7 +19,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 setup(
 
     name='NGSpeciesID',  # Required
-    version='0.1.1.1',  # Required
+    version='0.1.2',  # Required
     description='Reconstructs viral consensus sequences from a set of ONT reads.',  # Required
     long_description=long_description,  # Optional
     url='https://github.com/ksahlin/NGSpeciesID',  # Optional
@@ -75,7 +75,7 @@ setup(
     #
     # For an analysis of "install_requires" vs pip's requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['parasail==1.1.11',
+    install_requires=['parasail==1.1.10',
                       'edlib>=1.1.2'],  # Optional
     # dependency_links=[], # Optional
     # List additional groups of dependencies here (e.g. development
