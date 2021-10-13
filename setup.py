@@ -19,7 +19,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 setup(
 
     name='NGSpeciesID',  # Required
-    version='0.1.2.1',  # Required
+    version='0.1.2.2',  # Required
     description='Reconstructs viral consensus sequences from a set of ONT reads.',  # Required
     long_description=long_description,  # Optional
     url='https://github.com/ksahlin/NGSpeciesID',  # Optional
