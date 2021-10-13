@@ -197,6 +197,8 @@ if __name__ == '__main__':
     parser.add_argument('--consensus', action="store_true", help='After clustering, (1) run spoa on all clusters, (2) detect reverse complements, (3) run medaka.')
     parser.add_argument('--abundance_ratio', type=float, default=0.1, help='Threshold for --consensus algorithm. Consider only clusters larger than a fraction of number of total reads (default 0.1)')
     parser.add_argument('--rc_identity_threshold', type=float, default=0.9, help='Threshold for --consensus algorithm. Define a reverse complement if identity is over this threshold (default 0.9)')
+    parser.add_argument('--max_seqs_for_consensus', type=int, default=-1,  help='Maximum number of seqs to form consensus with spoa [INT] (default = -1, which means to use all sequences available regardless of cluster size).')
+
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--medaka', action="store_true", help='Run final medaka polishing algorithm.')
     group.add_argument('--racon', action="store_true", help='Run final racon polishing algorithm.')

@@ -204,6 +204,7 @@ def polish_sequences(centers, args):
         f.write(">{0}\n{1}\n".format("consensus_cl_id_{0}_total_supporting_reads_{1}".format(c_id, nr_reads_in_cluster), center))
         f.close()
         
+        nr_reads_used = 0
         all_reads_file = os.path.join(args.outfolder, "reads_to_consensus_{0}.fastq".format(c_id))
         f = open(all_reads_file, "w")
         for fasta_file in all_reads: 
@@ -211,11 +212,12 @@ def polish_sequences(centers, args):
             for acc, (seq, qual) in reads.items():
                 acc_tmp = acc.split()[0]
                 f.write("@{0}\n{1}\n{2}\n{3}\n".format(acc_tmp, seq, "+", qual))
+                nr_reads_used += 1
         f.close()
         # to_polishing.append( (nr_reads_in_cluster, c_id, spoa_center_file, all_reads_file) )
 
         if args.medaka:
-            print("running medaka on spoa reference {0}.".format(c_id))
+            print("running medaka on spoa reference {0} using {1} reads for polishing.".format(c_id, nr_reads_used))
             # for (nr_reads_in_cluster, c_id, spoa_center_file, all_reads_file) in to_polishing:
             polishing_outfolder = os.path.join(args.outfolder, "medaka_cl_id_{0}".format(c_id))
             help_functions.mkdir_p(polishing_outfolder)
@@ -225,7 +227,7 @@ def polish_sequences(centers, args):
             center_polished = l[1].strip()
             centers[i][2] = center_polished
         elif args.racon:
-            print("running racon on spoa reference {0}.".format(c_id))
+            print("running racon on spoa reference {0} using {1} reads for polishing.".format(c_id, nr_reads_used))
             # for (nr_reads_in_cluster, c_id, spoa_center_file, all_reads_file) in to_polishing:
             polishing_outfolder = os.path.join(args.outfolder, "racon_cl_id_{0}".format(c_id))
             help_functions.mkdir_p(polishing_outfolder)
@@ -247,13 +249,16 @@ def form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, wor
         nr_reads_in_cluster = len(all_read_acc)
         # print("nr_reads_in_cluster", nr_reads_in_cluster)
         if nr_reads_in_cluster >= abundance_cutoff:
-            for acc in all_read_acc:
+            for i, acc in enumerate(all_read_acc):
+                if (args.max_seqs_for_consensus) >=0 and (i >= args.max_seqs_for_consensus):
+                    break
                 seq, qual = reads[acc]
                 reads_path.write("@{0}\n{1}\n{2}\n{3}\n".format(acc, seq, "+", qual))
                 # reads_path.write(">{0}\n{1}\n".format(str(q_id)+str(pos1)+str(pos2), seq))
             reads_path.close()
             # spoa_ref = create_augmented_reference.run_spoa(reads_path.name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
-            print("creating center of {0} sequences.".format(nr_reads_in_cluster))
+            tmp_param = args.max_seqs_for_consensus if args.max_seqs_for_consensus > 0 else 2**32
+            print("creating center of {0} sequences.".format(min(nr_reads_in_cluster, tmp_param)))
             center = run_spoa(reads_path.name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
             centers.append( [nr_reads_in_cluster, c_id, center, reads_path.name])
     return centers
