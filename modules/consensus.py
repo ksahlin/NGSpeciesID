@@ -246,10 +246,11 @@ def form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, wor
     centers = []
     reads = { acc : (seq, qual) for acc, (seq, qual) in help_functions.readfq(open(sorted_reads_fastq_file, 'r'))}
     for c_id, all_read_acc in sorted(clusters.items(), key = lambda x: (len(x[1]),representatives[x[0]][5]), reverse=True):
-        with open(os.path.join(work_dir, "reads_c_id_{0}.fq".format(c_id)), "w") as reads_path:
-            nr_reads_in_cluster = len(all_read_acc)
-            # print("nr_reads_in_cluster", nr_reads_in_cluster)
-            if nr_reads_in_cluster >= abundance_cutoff:
+        nr_reads_in_cluster = len(all_read_acc)
+        # print("nr_reads_in_cluster", nr_reads_in_cluster)
+        if nr_reads_in_cluster >= abundance_cutoff:
+            with open(os.path.join(work_dir, "reads_c_id_{0}.fq".format(c_id)), "w") as reads_path:
+                reads_path_name = reads_path.name
                 for i, acc in enumerate(all_read_acc):
                     if (args.max_seqs_for_consensus) >=0 and (i >= args.max_seqs_for_consensus):
                         break
@@ -259,6 +260,6 @@ def form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, wor
             # spoa_ref = create_augmented_reference.run_spoa(reads_path.name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
             tmp_param = args.max_seqs_for_consensus if args.max_seqs_for_consensus > 0 else 2**32
             print("creating center of {0} sequences.".format(min(nr_reads_in_cluster, tmp_param)))
-            center = run_spoa(reads_path.name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
-            centers.append( [nr_reads_in_cluster, c_id, center, reads_path.name])
+            center = run_spoa(reads_path_name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
+            centers.append( [nr_reads_in_cluster, c_id, center, reads_path_name])
     return centers
