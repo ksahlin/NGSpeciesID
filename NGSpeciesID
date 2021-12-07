@@ -124,7 +124,10 @@ def main(args):
         print()
         work_dir = tempfile.mkdtemp()
         print("Temporary workdirektory for consensus and polishing:", work_dir)
-
+        print(
+            f"Forming draft consensus with abundance_cutoff >= {abundance_cutoff} "
+            f"({args.abundance_ratio * 100}% of {len(read_array)} reads)"
+        )
         centers = consensus.form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, work_dir, abundance_cutoff, args)
 
         if args.primer_file or args.remove_universal_tails:

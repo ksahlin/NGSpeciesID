@@ -88,12 +88,12 @@ def run_spoa(reads, spoa_out_file, spoa_path):
     with open(spoa_out_file, "w") as output_file:
         # print('Running spoa...', end=' ')
         stdout.flush()
-        null = open("/dev/null", "w")
-        subprocess.check_call([ spoa_path, reads, "-l", "0", "-r", "0", "-g", "-2"], stdout=output_file, stderr=null)
+        with open("/dev/null", "w") as null:
+            subprocess.check_call([ spoa_path, reads, "-l", "0", "-r", "0", "-g", "-2"], stdout=output_file, stderr=null)
         # print('Done.')
         stdout.flush()
-    output_file.close()
-    l = open(spoa_out_file, "r").readlines()
+    with open(spoa_out_file, "r") as sof:
+        l = sof.readlines()
     consensus = l[1].strip()
     return consensus
 
@@ -102,15 +102,14 @@ def run_medaka(reads_to_center, center_file, outfolder, cores, medaka_model):
     with open(medaka_stdout, "w") as output_file:
         # print('Running medaka...', end=' ')
         stdout.flush()
-        medaka_stderr = open(os.path.join(outfolder, "stderr.txt"), "w")
-        if medaka_model:
-            subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center_file, "-o", outfolder, "-t", cores, "-m", medaka_model], stdout=output_file, stderr=medaka_stderr)
-        else:
-            subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center_file, "-o", outfolder, "-t", cores], stdout=output_file, stderr=medaka_stderr)
+        with open(os.path.join(outfolder, "stderr.txt"), "w") as medaka_stderr:
+            if medaka_model:
+                subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center_file, "-o", outfolder, "-t", cores, "-m", medaka_model], stdout=output_file, stderr=medaka_stderr)
+            else:
+                subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center_file, "-o", outfolder, "-t", cores], stdout=output_file, stderr=medaka_stderr)
 
         # print('Done.')
         stdout.flush()
-    output_file.close()
 
 def run_racon(reads_to_center, center_file, outfolder, cores, racon_iter):
     racon_stdout = os.path.join(outfolder, "stdout.txt")
@@ -118,19 +117,22 @@ def run_racon(reads_to_center, center_file, outfolder, cores, racon_iter):
         # print('Running medaka...', end=' ')
         stdout.flush()
         for i in range(racon_iter):
-            read_alignments = open(os.path.join(outfolder, "read_alignments_it_{0}.paf".format(i)), 'w')
-            mm2_stderr = open(os.path.join(outfolder, "mm2_stderr_it_{0}.txt".format(i)), "w")
-            racon_stderr = open(os.path.join(outfolder, "racon_stderr_it_{0}.txt".format(i)), "w")
-            racon_polished = open(os.path.join(outfolder, "racon_polished_it_{0}.fasta".format(i)), 'w')
-
-            subprocess.check_call(['minimap2', '-x', 'map-ont', center_file, reads_to_center], stdout=read_alignments, stderr=mm2_stderr)
-            subprocess.check_call(['racon', reads_to_center, read_alignments.name, center_file], stdout=racon_polished, stderr=racon_stderr)
+            with open(
+                os.path.join(outfolder, "read_alignments_it_{0}.paf".format(i)), 'w'
+            ) as read_alignments, open(
+                os.path.join(outfolder, "mm2_stderr_it_{0}.txt".format(i)), "w"
+            ) as mm2_stderr, open(
+                os.path.join(outfolder, "racon_stderr_it_{0}.txt".format(i)), "w"
+            ) as racon_stderr, open(
+                os.path.join(outfolder, "racon_polished_it_{0}.fasta".format(i)
+            ), 'w') as racon_polished:
+                subprocess.check_call(['minimap2', '-x', 'map-ont', center_file, reads_to_center], stdout=read_alignments, stderr=mm2_stderr)
+                subprocess.check_call(['racon', reads_to_center, read_alignments.name, center_file], stdout=racon_polished, stderr=racon_stderr)
             center_file = racon_polished.name
 
         shutil.copyfile(center_file, os.path.join(outfolder, "consensus.fasta"))
         # print('Done.')
         stdout.flush()
-    output_file.close()
     # consensus.run_medaka( " medaka_consensus -i ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5.fastq -d ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_isonclust/consensus_references.fasta -o ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_medaka/ -t 1 -m r941_min_high_g303")
 
 
@@ -200,20 +202,18 @@ def polish_sequences(centers, args):
     for i, (nr_reads_in_cluster, c_id, center, all_reads) in enumerate(centers):
         # print('lol',c_id,center)
         spoa_center_file = os.path.join(args.outfolder, "consensus_reference_{0}.fasta".format(c_id))
-        f = open(spoa_center_file, "w")
-        f.write(">{0}\n{1}\n".format("consensus_cl_id_{0}_total_supporting_reads_{1}".format(c_id, nr_reads_in_cluster), center))
-        f.close()
+        with open(spoa_center_file, "w") as f:
+            f.write(">{0}\n{1}\n".format("consensus_cl_id_{0}_total_supporting_reads_{1}".format(c_id, nr_reads_in_cluster), center))
         
         nr_reads_used = 0
         all_reads_file = os.path.join(args.outfolder, "reads_to_consensus_{0}.fastq".format(c_id))
-        f = open(all_reads_file, "w")
-        for fasta_file in all_reads: 
-            reads = { acc : (seq, qual) for acc, (seq, qual) in help_functions.readfq(open(fasta_file, 'r'))}
-            for acc, (seq, qual) in reads.items():
-                acc_tmp = acc.split()[0]
-                f.write("@{0}\n{1}\n{2}\n{3}\n".format(acc_tmp, seq, "+", qual))
-                nr_reads_used += 1
-        f.close()
+        with open(all_reads_file, "w") as f:
+            for fasta_file in all_reads: 
+                reads = { acc : (seq, qual) for acc, (seq, qual) in help_functions.readfq(open(fasta_file, 'r'))}
+                for acc, (seq, qual) in reads.items():
+                    acc_tmp = acc.split()[0]
+                    f.write("@{0}\n{1}\n{2}\n{3}\n".format(acc_tmp, seq, "+", qual))
+                    nr_reads_used += 1
         # to_polishing.append( (nr_reads_in_cluster, c_id, spoa_center_file, all_reads_file) )
 
         if args.medaka:
@@ -223,7 +223,8 @@ def polish_sequences(centers, args):
             help_functions.mkdir_p(polishing_outfolder)
             run_medaka(all_reads_file, spoa_center_file, polishing_outfolder, "1", args.medaka_model)
             print("Saving medaka reference to file:", os.path.join(args.outfolder, "medaka_cl_id_{0}/consensus.fasta".format(c_id)))   
-            l = open(os.path.join(polishing_outfolder, "consensus.fasta"), 'r').readlines()
+            with open(os.path.join(polishing_outfolder, "consensus.fasta"), 'r') as cf:
+                l = cf.readlines()
             center_polished = l[1].strip()
             centers[i][2] = center_polished
         elif args.racon:
@@ -233,32 +234,43 @@ def polish_sequences(centers, args):
             help_functions.mkdir_p(polishing_outfolder)
             run_racon(all_reads_file, spoa_center_file, polishing_outfolder, "1", args.racon_iter)
             print("Saving racon reference to file:", os.path.join(args.outfolder, "racon_cl_id_{0}/consensus.fasta".format(c_id)))   
-            l = open(os.path.join(polishing_outfolder, "consensus.fasta"), 'r').readlines()
+            with open(os.path.join(polishing_outfolder, "consensus.fasta"), 'r') as cf:
+                l = cf.readlines()
             center_polished = l[1].strip()
             centers[i][2] = center_polished
 
-    f.close()
     return centers
 
 
 def form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, work_dir, abundance_cutoff, args):
     centers = []
+    singletons = 0
+    discarded_clusters = []
     reads = { acc : (seq, qual) for acc, (seq, qual) in help_functions.readfq(open(sorted_reads_fastq_file, 'r'))}
     for c_id, all_read_acc in sorted(clusters.items(), key = lambda x: (len(x[1]),representatives[x[0]][5]), reverse=True):
-        reads_path = open(os.path.join(work_dir, "reads_c_id_{0}.fq".format(c_id)), "w")
         nr_reads_in_cluster = len(all_read_acc)
         # print("nr_reads_in_cluster", nr_reads_in_cluster)
         if nr_reads_in_cluster >= abundance_cutoff:
-            for i, acc in enumerate(all_read_acc):
-                if (args.max_seqs_for_consensus) >=0 and (i >= args.max_seqs_for_consensus):
-                    break
-                seq, qual = reads[acc]
-                reads_path.write("@{0}\n{1}\n{2}\n{3}\n".format(acc, seq, "+", qual))
-                # reads_path.write(">{0}\n{1}\n".format(str(q_id)+str(pos1)+str(pos2), seq))
-            reads_path.close()
-            # spoa_ref = create_augmented_reference.run_spoa(reads_path.name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
+            reads_path_name = os.path.join(work_dir, "reads_c_id_{0}.fq".format(c_id))
+            with open(reads_path_name, "w") as reads_file:
+                for i, acc in enumerate(all_read_acc):
+                    if (args.max_seqs_for_consensus) >=0 and (i >= args.max_seqs_for_consensus):
+                        break
+                    seq, qual = reads[acc]
+                    reads_file.write("@{0}\n{1}\n{2}\n{3}\n".format(acc, seq, "+", qual))
+                    # reads.write(">{0}\n{1}\n".format(str(q_id)+str(pos1)+str(pos2), seq))
+            # spoa_ref = create_augmented_reference.run_spoa(reads_path_name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
             tmp_param = args.max_seqs_for_consensus if args.max_seqs_for_consensus > 0 else 2**32
             print("creating center of {0} sequences.".format(min(nr_reads_in_cluster, tmp_param)))
-            center = run_spoa(reads_path.name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
-            centers.append( [nr_reads_in_cluster, c_id, center, reads_path.name])
+            center = run_spoa(reads_path_name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
+            centers.append( [nr_reads_in_cluster, c_id, center, reads_path_name])
+        elif nr_reads_in_cluster == 1:
+            singletons += 1
+        elif nr_reads_in_cluster > 1:
+            discarded_clusters.append(nr_reads_in_cluster)
+    print(f"{singletons} singletons were discarded")
+    print(
+        f"{len(discarded_clusters)} clusters were discarded due to not passing the abundance_cutoff: "
+        f"a total of {sum(discarded_clusters)} reads were discarded"
+    )
     return centers
