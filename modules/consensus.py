@@ -244,22 +244,33 @@ def polish_sequences(centers, args):
 
 def form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, work_dir, abundance_cutoff, args):
     centers = []
+    singletons = 0
+    discarded_clusters = []
     reads = { acc : (seq, qual) for acc, (seq, qual) in help_functions.readfq(open(sorted_reads_fastq_file, 'r'))}
     for c_id, all_read_acc in sorted(clusters.items(), key = lambda x: (len(x[1]),representatives[x[0]][5]), reverse=True):
         nr_reads_in_cluster = len(all_read_acc)
         # print("nr_reads_in_cluster", nr_reads_in_cluster)
         if nr_reads_in_cluster >= abundance_cutoff:
-            with open(os.path.join(work_dir, "reads_c_id_{0}.fq".format(c_id)), "w") as reads_path:
-                reads_path_name = reads_path.name
+            reads_path_name = os.path.join(work_dir, "reads_c_id_{0}.fq".format(c_id))
+            with open(reads_path_name, "w") as reads_file:
                 for i, acc in enumerate(all_read_acc):
                     if (args.max_seqs_for_consensus) >=0 and (i >= args.max_seqs_for_consensus):
                         break
                     seq, qual = reads[acc]
-                    reads_path.write("@{0}\n{1}\n{2}\n{3}\n".format(acc, seq, "+", qual))
-                    # reads_path.write(">{0}\n{1}\n".format(str(q_id)+str(pos1)+str(pos2), seq))
-            # spoa_ref = create_augmented_reference.run_spoa(reads_path.name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
+                    reads_file.write("@{0}\n{1}\n{2}\n{3}\n".format(acc, seq, "+", qual))
+                    # reads.write(">{0}\n{1}\n".format(str(q_id)+str(pos1)+str(pos2), seq))
+            # spoa_ref = create_augmented_reference.run_spoa(reads_path_name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
             tmp_param = args.max_seqs_for_consensus if args.max_seqs_for_consensus > 0 else 2**32
             print("creating center of {0} sequences.".format(min(nr_reads_in_cluster, tmp_param)))
             center = run_spoa(reads_path_name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
             centers.append( [nr_reads_in_cluster, c_id, center, reads_path_name])
+        elif nr_reads_in_cluster == 1:
+            singletons += 1
+        elif nr_reads_in_cluster > 1:
+            discarded_clusters.append(nr_reads_in_cluster)
+    print(f"{singletons} singletons were discarded")
+    print(
+        f"{len(discarded_clusters)} clusters were discarded due to not passing the abundance_cutoff: "
+        f"a total of {sum(discarded_clusters)} reads were discarded"
+    )
     return centers
