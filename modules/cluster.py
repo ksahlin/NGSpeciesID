@@ -221,7 +221,7 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
 
     ## For multiprocessing only
     prev_b_indices = [ prev_batch_index for (read_cl_id, prev_batch_index, acc, seq, qual, score) in sorted_reads ]
-    lowest_batch_index = max(1, min(prev_b_indices))
+    lowest_batch_index = max(1, min(prev_b_indices or [1]))
     skip_count = prev_b_indices.count(lowest_batch_index)
     print("Saved: {0} iterations.".format(skip_count) )
     ###################################

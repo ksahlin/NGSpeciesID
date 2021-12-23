@@ -272,6 +272,6 @@ def form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, wor
     print(
         f"{len(discarded_clusters)} clusters were discarded due to not passing the abundance_cutoff: "
         f"a total of {sum(discarded_clusters)} reads were discarded. "
-        f"Highest abundance among them: {max(discarded_clusters + [0])} reads."
+        f"Highest abundance among them: {max(discarded_clusters or [0])} reads."
     )
     return centers
