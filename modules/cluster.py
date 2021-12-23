@@ -369,7 +369,7 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
     print("Total number of reads iterated through:{0}".format(len(sorted_reads)))
     print("Passed mapping criteria:{0}".format(mapped_passed_criteria))
     print("Passed alignment criteria in this process:{0}".format(aln_passed_criteria))
-    print("Total calls to alignment mudule in this process:{0}".format(aln_called))
+    print("Total calls to alignment module in this process:{0}".format(aln_called))
 
     return { new_batch_index : (clusters, representatives, minimizer_database, new_batch_index)}
 
