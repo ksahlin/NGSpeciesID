@@ -221,7 +221,7 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
 
     ## For multiprocessing only
     prev_b_indices = [ prev_batch_index for (read_cl_id, prev_batch_index, acc, seq, qual, score) in sorted_reads ]
-    lowest_batch_index = max(1, min(prev_b_indices))
+    lowest_batch_index = max(1, min(prev_b_indices or [1]))
     skip_count = prev_b_indices.count(lowest_batch_index)
     print("Saved: {0} iterations.".format(skip_count) )
     ###################################
@@ -369,7 +369,7 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
     print("Total number of reads iterated through:{0}".format(len(sorted_reads)))
     print("Passed mapping criteria:{0}".format(mapped_passed_criteria))
     print("Passed alignment criteria in this process:{0}".format(aln_passed_criteria))
-    print("Total calls to alignment mudule in this process:{0}".format(aln_called))
+    print("Total calls to alignment module in this process:{0}".format(aln_called))
 
     return { new_batch_index : (clusters, representatives, minimizer_database, new_batch_index)}
 
