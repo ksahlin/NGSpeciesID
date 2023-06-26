@@ -136,6 +136,25 @@ def run_racon(reads_to_center, center_file, outfolder, cores, racon_iter):
     # consensus.run_medaka( " medaka_consensus -i ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5.fastq -d ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_isonclust/consensus_references.fasta -o ~/tmp/stefan_isonclust/mixed_b1_b3_b4_b5_medaka/ -t 1 -m r941_min_high_g303")
 
 
+def highest_aln_identity(seq, seq2):
+    # RC
+    seq2_rc = reverse_complement(seq2)
+    seq_aln_rc, seq2_aln_rc, cigar_string_rc, cigar_tuples_rc, alignment_score_rc = parasail_alignment(seq, seq2_rc)
+    nr_mismatching_pos = len([1 for n1, n2 in zip(seq_aln_rc, seq2_aln_rc) if n1 != n2])
+    total_pos_rc = len(seq_aln_rc)
+    aln_identity_rc =  (total_pos_rc - nr_mismatching_pos) / float(total_pos_rc)
+    print('Rec comp orientation identity %: ', aln_identity_rc)
+
+    # FW
+    seq_aln, seq2_aln, cigar_string, cigar_tuples, alignment_score = parasail_alignment(seq, seq2)
+    nr_mismatching_pos = len([1 for n1, n2 in zip(seq_aln, seq2_aln) if n1 != n2])
+    total_pos = len(seq_aln)
+    aln_identity_fw = (total_pos - nr_mismatching_pos) / float(total_pos)  
+    print('Forward orientation identity %: ', aln_identity_fw)
+    aln_identity = max([aln_identity_fw, aln_identity_rc])
+    return aln_identity
+
+
 def detect_reverse_complements(centers, rc_identity_threshold):
     filtered_centers = []
     already_removed = set()
@@ -151,23 +170,14 @@ def detect_reverse_complements(centers, rc_identity_threshold):
             print("has already been merged, skipping")
             continue
 
-        elif i == len(centers) - 1: # last sequence and it is not in already removed
+        elif i == len(centers) - 1: # last sequence and it is not in already_removed
             filtered_centers.append( [merged_nr_reads, c_id, seq, all_reads ] )
 
         else:
             for j, (nr_reads_in_cl2, c_id2, seq2, reads_path) in enumerate(centers[i+1:]):
-                seq2_rc = reverse_complement(seq2)
-                seq_aln, seq2_rc_aln, cigar_string, cigar_tuples, alignment_score = parasail_alignment(seq, seq2_rc)
-                # print(i,j)
-                # print(seq_aln)
-                # print(seq2_rc_aln)
-                nr_mismatching_pos = len([1 for n1, n2 in zip(seq_aln, seq2_rc_aln) if n1 != n2])
-                total_pos = len(seq_aln)
-                aln_identity =  (total_pos - nr_mismatching_pos) / float(total_pos)
-                print(aln_identity)
-
+                aln_identity = highest_aln_identity(seq, seq2)
                 if aln_identity >= rc_identity_threshold:
-                    print("Detected alignment identidy above threchold for reverse complement. Keeping center with the most read support and adding rc reads to supporting reads.")
+                    print("Detected two consensus sequences with alignment identidy above threshold (from either reverse complement or split clusters). Keeping center with the most read support and merging reads.")
                     merged_nr_reads += nr_reads_in_cl2
                     already_removed.add(c_id2)
 
