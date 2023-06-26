@@ -143,14 +143,14 @@ def highest_aln_identity(seq, seq2):
     nr_mismatching_pos = len([1 for n1, n2 in zip(seq_aln_rc, seq2_aln_rc) if n1 != n2])
     total_pos_rc = len(seq_aln_rc)
     aln_identity_rc =  (total_pos_rc - nr_mismatching_pos) / float(total_pos_rc)
-    print('Rec comp orientation identity %: 'aln_identity_rc)
+    print('Rec comp orientation identity %: ', aln_identity_rc)
 
     # FW
     seq_aln, seq2_aln, cigar_string, cigar_tuples, alignment_score = parasail_alignment(seq, seq2)
     nr_mismatching_pos = len([1 for n1, n2 in zip(seq_aln, seq2_aln) if n1 != n2])
     total_pos = len(seq_aln)
     aln_identity_fw = (total_pos - nr_mismatching_pos) / float(total_pos)  
-    print('Forward orientation identity %: 'aln_identity_fw)
+    print('Forward orientation identity %: ', aln_identity_fw)
     aln_identity = max([aln_identity_fw, aln_identity_rc])
     return aln_identity
 
