@@ -58,8 +58,10 @@ def main(args):
     else:
         read_array = [ (i, 0, acc, seq, qual, float(acc.split("_")[-1])) for i, (acc, (seq, qual)) in enumerate(help_functions.readfq(open(sorted_reads_fastq_file, 'r')))]
 
-    if 0 < args.sample_size < len(read_array):
-        read_array = [  read_array[i] for i in sorted(random.sample(range(len(read_array)), args.sample_size))]
+    if args.top_reads:
+        read_array = read_array[:args.sample_size]
+    elif 0 < args.sample_size < len(read_array):
+        read_array = [read_array[i] for i in sorted(random.sample(range(len(read_array)), args.sample_size))]
 
     abundance_cutoff = int( args.abundance_ratio * len(read_array))
     #################################################################
@@ -217,8 +219,7 @@ if __name__ == '__main__':
     parser.add_argument('--m', dest="target_length", type=int, default=0, help='Intended amplicon length. Invoked to filter out reads with length greater than m + s or smaller than m - s (default = 0 which means no filtering)')
     parser.add_argument('--s', dest="target_deviation", type=int, default=0, help='Maximum allowed amplicon-length deviation.  Invoked to filter out reads with length greater than m + s or smaller than m - s (default = 0 which means no filtering)')
     parser.add_argument('--sample_size', type=int, default=0, help='Use sample_size reads in the NGSpecies pipeline (default = 0 which means all reads considered). If sample size is larger than actual number of reads, all reads will be used.')
-    
-
+    parser.add_argument('--top_reads', action='store_true', help='Use the top --sample_size reads instead of a random selection (default = false, which means random reads considered). ')
 
 
     parser.add_argument('--k', type=int, default=13, help='Kmer size')
