@@ -97,18 +97,17 @@ def run_spoa(reads, spoa_out_file, spoa_path):
     consensus = l[1].strip()
     return consensus
 
-def run_medaka(reads_to_center, center_file, outfolder, cores, medaka_model):
+def run_medaka(reads_to_center, center_file, outfolder, cores, medaka_model, outfastq=False):
     medaka_stdout = os.path.join(outfolder, "stdout.txt")
     with open(medaka_stdout, "w") as output_file:
-        # print('Running medaka...', end=' ')
         stdout.flush()
         with open(os.path.join(outfolder, "stderr.txt"), "w") as medaka_stderr:
+            cmd_args = ['medaka_consensus', '-i', reads_to_center, "-d", center_file, "-o", outfolder, "-t", cores]
             if medaka_model:
-                subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center_file, "-o", outfolder, "-t", cores, "-m", medaka_model], stdout=output_file, stderr=medaka_stderr)
-            else:
-                subprocess.check_call(['medaka_consensus', '-i', reads_to_center, "-d", center_file, "-o", outfolder, "-t", cores], stdout=output_file, stderr=medaka_stderr)
-
-        # print('Done.')
+                cmd_args += ["-m", medaka_model]
+            if outfastq:
+                cmd_args += ["-q"]
+            subprocess.check_call(cmd_args, stdout=output_file, stderr=medaka_stderr)
         stdout.flush()
 
 def run_racon(reads_to_center, center_file, outfolder, cores, racon_iter):
@@ -230,13 +229,19 @@ def polish_sequences(centers, args):
             print("running medaka on spoa reference {0} using {1} reads for polishing.".format(c_id, nr_reads_used))
             # for (nr_reads_in_cluster, c_id, spoa_center_file, all_reads_file) in to_polishing:
             polishing_outfolder = os.path.join(args.outfolder, "medaka_cl_id_{0}".format(c_id))
+            outfiles = [  # consider all output formats for compatibility with all Medaka versions
+                os.path.join(polishing_outfolder, "consensus.fasta"),
+                os.path.join(polishing_outfolder, "consensus.fastq")
+            ]
             help_functions.mkdir_p(polishing_outfolder)
-            run_medaka(all_reads_file, spoa_center_file, polishing_outfolder, "1", args.medaka_model)
-            print("Saving medaka reference to file:", os.path.join(args.outfolder, "medaka_cl_id_{0}/consensus.fasta".format(c_id)))   
-            with open(os.path.join(polishing_outfolder, "consensus.fasta"), 'r') as cf:
-                l = cf.readlines()
-            center_polished = l[1].strip()
-            centers[i][2] = center_polished
+            run_medaka(all_reads_file, spoa_center_file, polishing_outfolder, "1", args.medaka_model, outfastq=args.medaka_fastq)
+            print("Saving medaka reference to file:", os.path.join(polishing_outfolder, "consensus.fasta/q"))
+            for f in outfiles:
+                if os.path.isfile(f):
+                    with open(f, 'r') as cf:
+                        centers[i][2] = cf.readlines()[1].strip()  # the second line is the nucleotide sequence
+                        break
+            assert centers[i][2], "Medaka consensus sequence not found"
         elif args.racon:
             print("running racon on spoa reference {0} using {1} reads for polishing.".format(c_id, nr_reads_used))
             # for (nr_reads_in_cluster, c_id, spoa_center_file, all_reads_file) in to_polishing:
