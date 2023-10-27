@@ -209,6 +209,7 @@ if __name__ == '__main__':
     group.add_argument('--racon', action="store_true", help='Run final racon polishing algorithm.')
 
     parser.add_argument('--medaka_model', type=str, default="", help='Set specific medaka model.')
+    parser.add_argument('--medaka_fastq', action="store_true", help='Request Medaka to output a FASTQ file, instead of FASTA')
     parser.add_argument('--racon_iter', type=int, default=2, help='Number of times to run racon iteratively')
 
     group2 = parser.add_mutually_exclusive_group()
