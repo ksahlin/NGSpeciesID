@@ -103,7 +103,7 @@ def main(args):
     output_cl_id = 0
     for c_id, all_read_acc in sorted(clusters.items(), key = lambda x: (len(x[1]),representatives[x[0]][5]), reverse=True):
     # for c_id, all_read_acc in sorted(clusters.items(), key = lambda x: (len(x[1]),x[0]), reverse=True):
-        read_cl_id, b_i, acc, c_seq, c_qual, score, error_rate = representatives[c_id]
+        read_cl_id, b_i, acc, c_seq, c_qual, score, error_rate, _ = representatives[c_id]
         origins_outfile.write("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\n".format(output_cl_id, "_".join([item for item in acc.split("_")[:-1]]), c_seq, c_qual, score, error_rate))
 
         for r_acc in sorted(all_read_acc, key = lambda x: float(x.split("_")[-1]) , reverse=True):
@@ -228,6 +228,7 @@ if __name__ == '__main__':
     parser.add_argument('--min_shared', type=int, default=5, help='Minmum number of minimizers shared between read and cluster')
     parser.add_argument('--mapped_threshold', type=float, default=0.7, help='Minmum mapped fraction of read to be included in cluster. The density of minimizers to classify a region as mapped depends on quality of the read.')
     parser.add_argument('--aligned_threshold', type=float, default=0.4, help='Minmum aligned fraction of read to be included in cluster. Aligned identity depends on the quality of the read.')
+    parser.add_argument('--symmetric_map_align_thresholds', action='store_true', help='Apply mapped threshold and aligned threshold to fraction of cluster representative which maps onto the read')
     parser.add_argument('--batch_type', type=str, default='total_nt', help='In parrallel mode, how to split the reads into chunks "total_nt", "nr_reads", or "weighted" (default: total_nt) ')
     parser.add_argument('--min_fraction', type=float, default=0.8, help='Minmum fraction of minimizers shared compared to best hit, in order to continue mapping.')
     parser.add_argument('--min_prob_no_hits', type=float, default=0.1, help='Minimum probability for i consecutive minimizers to be different between read and representative and still considered as mapped region, under assumption that they come from the same transcript (depends on read quality).')
