@@ -93,8 +93,8 @@ def get_best_cluster(read_cl_id, compressed_seq_len, hit_clusters_ids, hit_clust
                 minimizer_hit_positions = hit_clusters_hit_positions[cl_id]
                 minimizer_hit_indices = hit_clusters_hit_index[cl_id]
                 assert len(minimizer_hit_indices) == len(minimizer_hit_positions)
-                _, _, _, _, _, _, error_rate_c = representatives[cl_id]
-                _, _, _, _, _, _, error_rate_read = representatives[read_cl_id]
+                _, _, _, _, _, _, error_rate_c, rep_compressed_seq = representatives[cl_id]
+                _, _, _, _, _, _, error_rate_read, _ = representatives[read_cl_id]
                 p_error_in_kmers_emp =  1.0 - p_shared_minimizer_empirical(error_rate_read, error_rate_c, p_emp_probs)
                 minimizer_error_probabilities = [p_error_in_kmers_emp]*nummber_of_minimizers
                 total_mapped = 0
@@ -115,13 +115,17 @@ def get_best_cluster(read_cl_id, compressed_seq_len, hit_clusters_ids, hit_clust
                 else:
                     total_mapped += compressed_seq_len - minimizer_hit_positions[-1]
 
-                mapped_ratio = total_mapped /float(compressed_seq_len) 
-                
-                if mapped_ratio > args.mapped_threshold:
-                    # is_covered = True
+                mapped_ratio = total_mapped /float(compressed_seq_len)
+
+                # Calculate the ratio of mapped region of the representative
+                rep_mapped_ratio = total_mapped / float(len(rep_compressed_seq))
+
+                if args.symmetric_map_align_thresholds and min(mapped_ratio, rep_mapped_ratio) > args.mapped_threshold:
+                    return cl_id, nm_hits, min(mapped_ratio, rep_mapped_ratio)
+                elif not args.symmetric_map_align_thresholds and mapped_ratio > args.mapped_threshold:
                     return cl_id, nm_hits, mapped_ratio
 
-    return  best_cluster_id, nr_shared_kmers, mapped_ratio 
+    return best_cluster_id, nr_shared_kmers, mapped_ratio
 
 
 def parasail_block_alignment(s1, s2, k, match_id, match_score = 2, mismatch_penalty = -2, opening_penalty = 5, gap_ext = 1):
@@ -164,13 +168,14 @@ def parasail_block_alignment(s1, s2, k, match_id, match_score = 2, mismatch_pena
     # print("".join([str(m) for m in aligned_region]))
     # print("Aligned ratio (tot aligned/len(seq1):", sum(aligned_region)/float(len(s1)))
     alignment_ratio = sum(aligned_region)/float(len(s1))
-    return (s1, s2, (s1_alignment, s2_alignment, alignment_ratio))
+    target_alignment_ratio = sum(aligned_region)/float(len(s2))
+    return (s1, s2, (s1_alignment, s2_alignment, alignment_ratio, target_alignment_ratio))
 
 
 def get_best_cluster_block_align(read_cl_id, representatives, hit_clusters_ids, hit_clusters_hit_positions, phred_char_to_p, args):
     best_cluster_id = -1
     top_matches = sorted(hit_clusters_hit_positions.items(), key=lambda x: (len(x[1]), sum(x[1]), representatives[x[0]][2]),  reverse=True) #sorted(hit_clusters_ids.items(), key=lambda x: x[1],  reverse=True)
-    _, _, _, seq, r_qual, _, _ = representatives[read_cl_id]
+    _, _, _, seq, r_qual, _, _, _ = representatives[read_cl_id]
     # print(top_matches)
     top_hits = len(top_matches[0][1])
     alignment_ratio = 0.0
@@ -179,7 +184,7 @@ def get_best_cluster_block_align(read_cl_id, representatives, hit_clusters_ids, 
         nm_hits = len(tm[1])
         if nm_hits < top_hits:
             break
-        _, _, _, c_seq, c_qual, _, _ = representatives[cl_id]
+        _, _, _, c_seq, c_qual, _, _, _ = representatives[cl_id]
 
         poisson_mean = sum([ r_qual.count(char_) * phred_char_to_p[char_] for char_ in set(r_qual)])
         poisson_mean2 = sum([ c_qual.count(char_) * phred_char_to_p[char_] for char_ in set(c_qual)])
@@ -195,11 +200,13 @@ def get_best_cluster_block_align(read_cl_id, representatives, hit_clusters_ids, 
             gap_opening_penalty = 2
 
         match_id_tailored = math.floor((1.0 - error_rate_sum) * args.k)
-        (s1, s2, (s1_alignment, s2_alignment, alignment_ratio)) = parasail_block_alignment(seq, c_seq, args.k, match_id_tailored, opening_penalty = gap_opening_penalty,  )
+        (s1, s2, (s1_alignment, s2_alignment, alignment_ratio, target_alignment_ratio)) = parasail_block_alignment(seq, c_seq, args.k, match_id_tailored, opening_penalty = gap_opening_penalty,  )
         # print("Expected errors:", poisson_mean, poisson_mean2)
-        if alignment_ratio >= args.aligned_threshold: #args.mapped_threshold:
+        if args.symmetric_map_align_thresholds and min(alignment_ratio, target_alignment_ratio) >= args.aligned_threshold:
+            return cl_id, nm_hits,  error_rate_sum, s1_alignment, s2_alignment, min(alignment_ratio, target_alignment_ratio)
+        elif not args.symmetric_map_align_thresholds and alignment_ratio >= args.aligned_threshold:
             return cl_id, nm_hits,  error_rate_sum, s1_alignment, s2_alignment, alignment_ratio
-
+        
     return  best_cluster_id, 0,  -1, -1, -1, alignment_ratio
 
 def eprint(*args, **kwargs):
@@ -279,7 +286,7 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
         
         # 2. Find the homopolymer compressed error rate (else statement is the only one active in single core mode)
 
-        if len(representatives[read_cl_id]) == 7: # we have already computed homopolymenr compressed error rate in previous iteration (if isONclust is called with multiple cores):
+        if len(representatives[read_cl_id]) == 8: # we have already computed homopolymenr compressed error rate in previous iteration (if isONclust is called with multiple cores):
             lst = list(representatives[read_cl_id])
             lst[1] = new_batch_index
             t = tuple(lst)
@@ -310,7 +317,7 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
             # compute the average error rate after compression
             poisson_mean = sum([ qualcomp.count(char_) * phred_char_to_p[char_] for char_ in set(qualcomp)])
             h_pol_compr_error_rate = poisson_mean/float(len(qualcomp))
-            representatives[read_cl_id] = (read_cl_id, new_batch_index, acc, seq, qual, score, h_pol_compr_error_rate) # adding homopolymenr compressed error rate to info tuple of cluster origin sequence
+            representatives[read_cl_id] = (read_cl_id, new_batch_index, acc, seq, qual, score, h_pol_compr_error_rate, seq_hpol_comp) # adding homopolymenr compressed error rate to info tuple of cluster origin sequence
 
 
         # 3. Find all the representatives with shared minimizers (this is the time consuming function for noisy and large datasets)

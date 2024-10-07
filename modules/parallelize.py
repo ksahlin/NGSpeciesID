@@ -96,7 +96,7 @@ def print_intermediate_results(clusters, cluster_seq_origin, args, iter_nr):
 
     origins_outfile = open(os.path.join(path,  "cluster_origins.csv"), "w")
     for cl_id, all_read_acc in sorted(clusters.items(), key = lambda x: len(x[1]), reverse=True):
-        read_cl_id, b_i, acc, c_seq, c_qual, score, error_rate = cluster_seq_origin[cl_id]
+        read_cl_id, b_i, acc, c_seq, c_qual, score, error_rate, _ = cluster_seq_origin[cl_id]
         origins_outfile.write("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\n".format(read_cl_id, acc, c_seq, c_qual, score, error_rate)) 
     outfile.close()
     origins_outfile.close()
@@ -180,7 +180,7 @@ def parallel_clustering(read_array, p_emp_probs, args):
 
         all_clusters = merge_dicts(*all_cl)
         all_representatives = merge_dicts(*all_repr)
-        read_array =  [ (i, b_index, acc, seq, qual, score) for i, (i, b_index, acc, seq, qual, score, error_rate) in sorted(all_representatives.items(), key=lambda x: x[1][5], reverse=True)] 
+        read_array =  [ (i, b_index, acc, seq, qual, score) for i, (i, b_index, acc, seq, qual, score, error_rate, _) in sorted(all_representatives.items(), key=lambda x: x[1][5], reverse=True)]
         new_nr_repr = len(read_array)
         print("number of representatives left to cluster:", new_nr_repr)
         print("Time elapesd joining clusters:", time() - start_joining)
