@@ -121,7 +121,7 @@ def get_best_cluster(read_cl_id, compressed_seq_len, hit_clusters_ids, hit_clust
                 rep_mapped_ratio = total_mapped / float(len(rep_compressed_seq))
 
                 if args.symmetric_map_align_thresholds and min(mapped_ratio, rep_mapped_ratio) > args.mapped_threshold:
-                    return cl_id, nm_hits, mapped_ratio
+                    return cl_id, nm_hits, min(mapped_ratio, rep_mapped_ratio)
                 elif not args.symmetric_map_align_thresholds and mapped_ratio > args.mapped_threshold:
                     return cl_id, nm_hits, mapped_ratio
 
@@ -203,7 +203,7 @@ def get_best_cluster_block_align(read_cl_id, representatives, hit_clusters_ids, 
         (s1, s2, (s1_alignment, s2_alignment, alignment_ratio, target_alignment_ratio)) = parasail_block_alignment(seq, c_seq, args.k, match_id_tailored, opening_penalty = gap_opening_penalty,  )
         # print("Expected errors:", poisson_mean, poisson_mean2)
         if args.symmetric_map_align_thresholds and min(alignment_ratio, target_alignment_ratio) >= args.aligned_threshold:
-            return cl_id, nm_hits,  error_rate_sum, s1_alignment, s2_alignment, alignment_ratio
+            return cl_id, nm_hits,  error_rate_sum, s1_alignment, s2_alignment, min(alignment_ratio, target_alignment_ratio)
         elif not args.symmetric_map_align_thresholds and alignment_ratio >= args.aligned_threshold:
             return cl_id, nm_hits,  error_rate_sum, s1_alignment, s2_alignment, alignment_ratio
         
