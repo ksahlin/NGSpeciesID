@@ -63,7 +63,8 @@ def remove_barcodes(centers, barcodes, args):
         Modifies consensus sequences by copping of at barcode sites.
         This implies changing the datastructure centers with the modified consensus sequeces
     """
-    
+
+    centers_updated = False
     for i, (nr_reads_in_cluster, c_id, center, reads_path_name) in enumerate(centers):
 
         # if consensus is smaller than 2*trim_window we set trim window to half the sequence
@@ -91,11 +92,16 @@ def remove_barcodes(centers, barcodes, args):
                 if start < earliest_hit:
                     earliest_hit = start
             cut_end = len(center) - (trim_window - earliest_hit)
-        center = center[cut_start: cut_end]
 
-        print(center, "NEW")
-        print("cut start", cut_start, "cut end", cut_end)
-        centers[i][2] = center
+        if cut_start > 0 or cut_end < len(center):
+            center = center[cut_start: cut_end]
+
+            print(center, "NEW")
+            print("cut start", cut_start, "cut end", cut_end)
+            centers[i][2] = center
+            centers_updated = True
+
+    return centers_updated
 
     ## Old code scanned all consensus and were prone to errors due to cutting directionality (befause of fwd or rev comp hits of the adapter)
     # for i, (nr_reads_in_cluster, c_id, center, reads_path_name) in enumerate(centers):

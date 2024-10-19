@@ -147,9 +147,10 @@ def main(args):
         centers_polished = consensus.polish_sequences(centers_filtered, args)
 
         if args.primer_file or args.remove_universal_tails: # check if barcode is found after polishing with medaka
-            barcode_trimmer.remove_barcodes(centers_polished, barcodes, args)
-            centers_filtered = consensus.detect_reverse_complements(centers_polished, args.rc_identity_threshold)
-            centers_polished = consensus.polish_sequences(centers_filtered, args)
+            centers_updated = barcode_trimmer.remove_barcodes(centers_polished, barcodes, args)
+            if centers_updated:
+                centers_filtered = consensus.detect_reverse_complements(centers_polished, args.rc_identity_threshold)
+                centers_polished = consensus.polish_sequences(centers_filtered, args)
 
 
         print("removing temporary workdir")
