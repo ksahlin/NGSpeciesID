@@ -4,14 +4,12 @@ from __future__ import print_function
 import os,sys
 import argparse
 import tempfile
-import errno
 from time import time
 import shutil
 import random
 import logging
 
 from modules import get_sorted_fastq_for_cluster
-from modules import cluster
 from modules import p_minimizers_shared
 from modules import help_functions
 from modules import parallelize
@@ -295,8 +293,6 @@ if __name__ == '__main__':
 
     # edlib_module = 'edlib'
     parasail_module = 'parasail'
-    # if edlib_module not in sys.modules:
-    #     print('You have not imported the {0} module. Only performing clustering with mapping, i.e., no alignment.'.format(edlib_module))
     if parasail_module not in sys.modules:
         logging.error('You have not imported the {0} module. Only performing clustering with mapping, i.e., no alignment!'.format(parasail_module))
         sys.exit(1)

@@ -126,7 +126,6 @@ def parallel_clustering(read_array, p_emp_probs, args):
     del read_array
 
     ####### parallelize alignment #########
-    # pool = Pool(processes=mp.cpu_count())
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
     signal.signal(signal.SIGINT, original_sigint_handler)
     try:
@@ -153,7 +152,6 @@ def parallel_clustering(read_array, p_emp_probs, args):
         start_multi = time()
         pool = Pool(processes=int(num_batches))
         try:
-            # print([len(b) for b in read_batches])
             data = [ {i+1 :((cluster_batches[i], cluster_seq_origin_batches[i], read_batches[i], p_emp_probs, lowest_batch_index_db[i], i+1, args), {})} for i in range(len(read_batches))]
             res = pool.map_async(reads_to_clusters_helper, data)
             cluster_results =res.get(999999999) # Without the timeout this blocking call ignores all signals.

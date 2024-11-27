@@ -1,13 +1,11 @@
 from __future__ import print_function
 from functools import reduce
 import os,sys
-import argparse
 from collections import defaultdict
 import math
 from collections import deque
 import itertools
 from operator import mul
-import re
 import logging
 
 import parasail
@@ -166,8 +164,6 @@ def parasail_block_alignment(s1, s2, k, match_id, match_score = 2, mismatch_pena
         else:        
             aligned_region.append(0)
 
-    # print("".join([str(m) for m in aligned_region]))
-    # print("Aligned ratio (tot aligned/len(seq1):", sum(aligned_region)/float(len(s1)))
     alignment_ratio = sum(aligned_region)/float(len(s1))
     target_alignment_ratio = sum(aligned_region)/float(len(s2))
     return (s1, s2, (s1_alignment, s2_alignment, alignment_ratio, target_alignment_ratio))
@@ -177,7 +173,6 @@ def get_best_cluster_block_align(read_cl_id, representatives, hit_clusters_ids, 
     best_cluster_id = -1
     top_matches = sorted(hit_clusters_hit_positions.items(), key=lambda x: (len(x[1]), sum(x[1]), representatives[x[0]][2]),  reverse=True) #sorted(hit_clusters_ids.items(), key=lambda x: x[1],  reverse=True)
     _, _, _, seq, r_qual, _, _, _ = representatives[read_cl_id]
-    # print(top_matches)
     top_hits = len(top_matches[0][1])
     alignment_ratio = 0.0
     for tm in top_matches:
@@ -202,7 +197,6 @@ def get_best_cluster_block_align(read_cl_id, representatives, hit_clusters_ids, 
 
         match_id_tailored = math.floor((1.0 - error_rate_sum) * args.k)
         (s1, s2, (s1_alignment, s2_alignment, alignment_ratio, target_alignment_ratio)) = parasail_block_alignment(seq, c_seq, args.k, match_id_tailored, opening_penalty = gap_opening_penalty,  )
-        # print("Expected errors:", poisson_mean, poisson_mean2)
         if args.symmetric_map_align_thresholds and min(alignment_ratio, target_alignment_ratio) >= args.aligned_threshold:
             return cl_id, nm_hits,  error_rate_sum, s1_alignment, s2_alignment, min(alignment_ratio, target_alignment_ratio)
         elif not args.symmetric_map_align_thresholds and alignment_ratio >= args.aligned_threshold:
@@ -263,13 +257,6 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
             cl_tmp = sorted( [ 1 + sum([len(clusters[cl_id]) for cl_id in c ]) for c in inv_map.values() ], reverse= True)
             cl_tmp_nontrivial = [cl_size_tmp for cl_size_tmp in cl_tmp if cl_size_tmp > 1]
             logging.debug("{0}\t{1}\t{2}\t{3}\t{4}".format(i, len(cl_tmp_nontrivial), len(minimizer_database), "_".join(acc.split("_")[:-1]), ",".join([str(s_) for s_ in sorted(cl_tmp_nontrivial, reverse=True)])))
-            # print("Processing read", i+1 , "seq length:", len(seq), "nr non-trivial clusters:", len(cl_tmp_nontrivial), "kmers stored:", len(minimizer_database))
-            # print("Non trivial cluster sizes:", sorted(cl_tmp_nontrivial, reverse=True))
-
-            # print("clust distr:", [c_len for c_len in cl_tmp if c_len > 100] )
-            # depth = [len(nr_cl) for kmer, nr_cl in  sorted(minimizer_database.items(), key=lambda x: len(x[1]), reverse= True) if len(nr_cl) > 1 ]
-            # print("Minimizer database depths:", depth)
-            # print("Nr trivial clusters :", cl_sizes)
         ################################################################################
         ################################################################################
 
@@ -289,27 +276,15 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
             t = tuple(lst)
             representatives[read_cl_id] =  t # just updated batch index
         else:
-            # indices = [i for i, (n1,n2) in enumerate(zip(seq[:-1],seq[1:])) if n1 != n2] # indicies we want to take quality values from to get quality string of homopolymer compressed read 
-            # indices.append(len(seq) - 1)
-            # qualcomp = ''.join([qual[i] for i in indices])
-            # assert len(seq_hpol_comp) == len(qualcomp)
             all_read_hpol_lengths = [len([c for c in g]) for ch, g in itertools.groupby(seq)]
-            # print(all_read_hpol_lengths)
             qualcomp = []
             start = 0
             for h_len in all_read_hpol_lengths:
                 q_max = min(qual[start: start + h_len], key = lambda x: phred_char_to_p[x])
                 qualcomp.append(q_max)
-                # if h_len > 2:
-                #     print(qual[start: start + h_len], q_max)
                 start += h_len
             qualcomp = "".join([q for q in qualcomp])
             assert len(seq_hpol_comp) == len(qualcomp)
-            # print(qualcomp)
-            # assert len(qualcomp) == len(qualcomp2)
-            # print(qualcomp)
-            # print(qualcomp2)
-            # print()
 
             # compute the average error rate after compression
             poisson_mean = sum([ qualcomp.count(char_) * phred_char_to_p[char_] for char_ in set(qualcomp)])
@@ -380,18 +355,15 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
 
 def p_shared_minimizer_empirical(error_rate_read, error_rate_center, p_emp_probs):
     e1 = round(error_rate_read, 2)
-    # print(e1)
     if e1 > 0.15:
         e1 = 0.15
     if e1 < 0.01:
         e1 = 0.01
     e2 = round(error_rate_center, 2)
-    # print(e2)
     if e2 > 0.15:
         e2 = 0.15
     if e2 < 0.01:
         e2 = 0.01
-    # print(e2)
     p_kmer_shared = p_emp_probs[(e1,e2)]
     return p_kmer_shared
 

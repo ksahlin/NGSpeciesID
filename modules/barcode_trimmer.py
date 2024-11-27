@@ -46,7 +46,6 @@ def find_barcode_locations(center, barcodes, primer_max_ed):
                  ('X', 'T'), ('X', 'C'), ('N', 'G'), ('N', 'A'), ('N', 'T'), ('N', 'C')]
     all_locations = []
     for primer_acc, primer_seq in barcodes.items():
-        # print(primer_acc, primer_seq,center)
         # Add additionalEqualities=IUPAC_map allow edlib to understand IUPAC code
         result = edlib.align(primer_seq, center,
                              mode="HW", task="locations", k=primer_max_ed,
@@ -103,31 +102,3 @@ def remove_barcodes(centers, barcodes, args):
             centers_updated = True
 
     return centers_updated
-
-    ## Old code scanned all consensus and were prone to errors due to cutting directionality (befause of fwd or rev comp hits of the adapter)
-    # for i, (nr_reads_in_cluster, c_id, center, reads_path_name) in enumerate(centers):
-    #     barcode_locations = find_barcode_locations(center, barcodes, args.primer_max_ed) 
-    #     if barcode_locations:
-    #         print("FOUND BARCODE", barcode_locations)
-    #         cut_start = 0
-    #         cut_end = len(center)
-    #         print(center)
-    #         for bc, start, stop, ed in barcode_locations:
-    #             # print(ed,bc, bc[-4], bc[-2:])
-    #             if bc[-4] == 'F' and bc[-2:] == 'fw':
-    #                 cut_start = stop
-    #             elif bc[-4] == 'R' and bc[-2:] == 'fw': 
-    #                 cut_end = start
-    #             elif bc[-4] == 'R' and bc[-2:] == 'rc':
-    #                 cut_start = stop
-    #             elif bc[-4] == 'F' and bc[-2:] == 'rc': 
-    #                 cut_end = start
-    #             else:
-    #                 print()
-    #                 print("Primer file not in correct format!")
-    #                 print()
-    #         # print(center)
-    #         center = center[cut_start: cut_end]
-    #         print(center, "NEW")
-    #         print("cut start", cut_start, "cut end", cut_end)
-    #         centers[i][2] = center

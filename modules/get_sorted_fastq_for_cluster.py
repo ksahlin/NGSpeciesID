@@ -8,7 +8,6 @@ import multiprocessing as mp
 
 import operator
 import functools
-import errno
 from time import time
 from collections import deque
 import sys
@@ -24,16 +23,11 @@ D_no_min = {chr(i) : 10**( - (ord(chr(i)) - 33)/10.0 )  for i in range(128)}
 def expected_number_of_erroneous_kmers(quality_string, k):
     prob_error = [D[char_] for char_ in quality_string]
     window = deque([ (1.0 - p_e) for p_e in prob_error[:k]])
-    # print(window)
     qurrent_prob_no_error = functools.reduce(operator.mul, window, 1)
-    # print(qurrent_prob_no_error)
-    sum_of_expectations = qurrent_prob_no_error # initialization 
+    sum_of_expectations = qurrent_prob_no_error # initialization
     for p_e in prob_error[k:]:
         p_to_leave = window.popleft()
-        # print(window)
-        # print(p_to_leave, "!" in quality_string)
         qurrent_prob_no_error *= ((1.0 -p_e)/(p_to_leave))
-        # print(qurrent_prob_no_error)
         sum_of_expectations += qurrent_prob_no_error
         window.append(1.0 -p_e)
     return len(quality_string) - k + 1 - sum_of_expectations 
@@ -68,7 +62,6 @@ def calc_score_new(d):
         poisson_mean = sum([ qual.count(char_) * D_no_min[char_] for char_ in set(qual)])
         error_rate = poisson_mean/float(len(qual))
         if 10*-math.log(error_rate, 10) <= q_threshold:
-            # print("Filtered read with:", 10*-math.log(error_rate, 10), error_rate)
             continue
 
         error_rates.append(error_rate)
@@ -89,7 +82,6 @@ def fastq_parallel(args):
     read_batches = [b for b in batch(reads, read_chunk_size)]
     del reads
     ####### parallelize alignment #########
-    # pool = Pool(processes=mp.cpu_count())
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
     signal.signal(signal.SIGINT, original_sigint_handler)
     mp.set_start_method('spawn')
@@ -153,7 +145,6 @@ def fastq_single_core(args):
         poisson_mean = sum([ qual.count(char_) * D_no_min[char_] for char_ in set(qual)])
         error_rate = poisson_mean/float(len(qual))
         if 10*-math.log(error_rate, 10) <= q_threshold:
-            # print("Filtered read with:", 10*-math.log(error_rate, 10), error_rate)
             continue
         error_rates.append(error_rate)
         ##############################################
