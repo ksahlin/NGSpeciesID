@@ -193,7 +193,9 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Evaluate pacbio IsoSeq transcripts.")
-    parser.add_argument('--fastq', type=str,  default=False, help='Path to consensus fastq file(s)')
+    reads_file = parser.add_mutually_exclusive_group(required=True)
+    reads_file.add_argument('--fastq', type=str, help='Path to consensus fastq file(s)')
+    reads_file.add_argument('--use_old_sorted_file', action='store_true', help='Using already existing sorted file if present in specified output directory.')
     parser.add_argument('--outfile', type=str,  default=None, help='A fasta file with transcripts that are shared between samples and have perfect illumina support.')
     parser.add_argument('--k', type=int, default=15, help='kmer size')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
@@ -206,15 +208,6 @@ if __name__ == '__main__':
         level=loglevel,
         format='%(message)s'
     )
-
-    if (args.fastq and (args.flnc or args.ccs)):
-        logging.error("Either (1) only a fastq file, or (2) a ccs and a flnc file should be specified. ")
-        sys.exit()
-
-    if (args.flnc != False and args.ccs == False ) or (args.flnc == False and args.ccs != False ):
-        logging.error("qt-clust needs both the ccs.bam file produced by ccs and the flnc file produced by isoseq3 cluster. ")
-        sys.exit()
-
 
     if len(sys.argv)==1:
         parser.print_help()
