@@ -8,6 +8,7 @@ from collections import deque
 import itertools
 from operator import mul
 import re
+import logging
 
 import parasail
 
@@ -132,9 +133,9 @@ def parasail_block_alignment(s1, s2, k, match_id, match_score = 2, mismatch_pena
     user_matrix = parasail.matrix_create("ACGT", match_score, mismatch_penalty)
     result = parasail.sg_trace_scan_16(s1, s2, opening_penalty, gap_ext, user_matrix)
     if result.saturated:
-        print("SATURATED!",len(s1), len(s2))
+        logging.warning(f"SATURATED! {len(s1)} {len(s2)}")
         result = parasail.sg_trace_scan_32(s1, s2, opening_penalty, gap_ext, user_matrix)
-        print("computed 32 bit instead")
+        logging.warning("computed 32 bit instead")
 
     # difference in how to obtain string from parasail between python v2 and v3... 
     if sys.version_info[0] < 3:
@@ -209,10 +210,6 @@ def get_best_cluster_block_align(read_cl_id, representatives, hit_clusters_ids, 
         
     return  best_cluster_id, 0,  -1, -1, -1, alignment_ratio
 
-def eprint(*args, **kwargs):
-    print(*args, file=sys.stderr, **kwargs)
-
-
 def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, minimizer_database, new_batch_index, args):
     """
         Iterates throughreads in sorted order (w.r.t. score) and:
@@ -230,7 +227,7 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
     prev_b_indices = [ prev_batch_index for (read_cl_id, prev_batch_index, acc, seq, qual, score) in sorted_reads ]
     lowest_batch_index = max(1, min(prev_b_indices or [1]))
     skip_count = prev_b_indices.count(lowest_batch_index)
-    print("Saved: {0} iterations.".format(skip_count) )
+    logging.debug("Saved: {0} iterations.".format(skip_count) )
     ###################################
     
     ## logging counters 
@@ -243,7 +240,7 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
     cluster_to_new_cluster_id = {}
 
     if args.print_output:
-        eprint("Iteration\tNrClusters\tMinDbSize\tCurrReadId\tClusterSizes")
+        logging.debug("Iteration\tNrClusters\tMinDbSize\tCurrReadId\tClusterSizes")
 
     for i, (read_cl_id, prev_batch_index, acc, seq, qual, score) in enumerate(sorted_reads):
 
@@ -265,7 +262,7 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
                 inv_map.setdefault(v, set()).add(k)
             cl_tmp = sorted( [ 1 + sum([len(clusters[cl_id]) for cl_id in c ]) for c in inv_map.values() ], reverse= True)
             cl_tmp_nontrivial = [cl_size_tmp for cl_size_tmp in cl_tmp if cl_size_tmp > 1]
-            eprint("{0}\t{1}\t{2}\t{3}\t{4}".format(i, len(cl_tmp_nontrivial), len(minimizer_database), "_".join(acc.split("_")[:-1]), ",".join([str(s_) for s_ in sorted(cl_tmp_nontrivial, reverse=True)])))
+            logging.debug("{0}\t{1}\t{2}\t{3}\t{4}".format(i, len(cl_tmp_nontrivial), len(minimizer_database), "_".join(acc.split("_")[:-1]), ",".join([str(s_) for s_ in sorted(cl_tmp_nontrivial, reverse=True)])))
             # print("Processing read", i+1 , "seq length:", len(seq), "nr non-trivial clusters:", len(cl_tmp_nontrivial), "kmers stored:", len(minimizer_database))
             # print("Non trivial cluster sizes:", sorted(cl_tmp_nontrivial, reverse=True))
 
@@ -280,7 +277,7 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
 
         seq_hpol_comp = ''.join(ch for ch, _ in itertools.groupby(seq))
         if len(seq_hpol_comp) < args.k:
-            print( "skipping read of length:", len(seq), "homopolymer compressed:", len(seq_hpol_comp), seq)
+            logging.debug( f"skipping read of length: {len(seq)} homopolymer compressed: {len(seq_hpol_comp)} {seq}")
             continue 
         minimizers = get_kmer_minimizers(seq_hpol_comp, args.k, args.w)
         
@@ -373,10 +370,10 @@ def reads_to_clusters(clusters, representatives, sorted_reads, p_emp_probs, mini
         del representatives[read_cl_id]
     ##########################
 
-    print("Total number of reads iterated through:{0}".format(len(sorted_reads)))
-    print("Passed mapping criteria:{0}".format(mapped_passed_criteria))
-    print("Passed alignment criteria in this process:{0}".format(aln_passed_criteria))
-    print("Total calls to alignment module in this process:{0}".format(aln_called))
+    logging.debug("Total number of reads iterated through:{0}".format(len(sorted_reads)))
+    logging.debug("Passed mapping criteria:{0}".format(mapped_passed_criteria))
+    logging.debug("Passed alignment criteria in this process:{0}".format(aln_passed_criteria))
+    logging.debug("Total calls to alignment module in this process:{0}".format(aln_called))
 
     return { new_batch_index : (clusters, representatives, minimizer_database, new_batch_index)}
 

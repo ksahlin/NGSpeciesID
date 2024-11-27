@@ -5,6 +5,8 @@ import signal
 from multiprocessing import Pool
 import multiprocessing as mp
 from time import time
+import logging
+import sys
 
 
 from modules import help_functions
@@ -90,8 +92,8 @@ def print_intermediate_results(clusters, cluster_seq_origin, args, iter_nr):
             outfile.write("{0}\t{1}\n".format(c_id, "_".join([item for item in r_acc.split("_")[:-1]]) ))
         if len(all_read_acc) > 1:
             nontrivial_cluster_index += 1
-    print("Nr clusters larger than 1:", nontrivial_cluster_index) #, "Non-clustered reads:", len(archived_reads))
-    print("Nr clusters (all):", len(clusters)) #, "Non-clustered reads:", len(archived_reads))
+    logging.debug(f"Nr clusters larger than 1: {nontrivial_cluster_index}") #, "Non-clustered reads:", len(archived_reads))
+    logging.debug(f"Nr clusters (all):  {len(clusters)}") #, "Non-clustered reads:", len(archived_reads))
 
 
     origins_outfile = open(os.path.join(path,  "cluster_origins.csv"), "w")
@@ -105,8 +107,10 @@ def print_intermediate_results(clusters, cluster_seq_origin, args, iter_nr):
 def parallel_clustering(read_array, p_emp_probs, args):
     num_batches = args.nr_cores 
     read_batches = [batch for batch in batch_list(read_array, num_batches, batch_type = args.batch_type )]
-    print("Using total nucleotide batch sizes:", [sum([len(seq) for i, b_i, acc, seq, qual, score in b]) for b in read_batches] )
-    print("Nr reads in batches:", [len(b)  for b in read_batches] )
+    batch_sizes = [sum([len(seq) for i, b_i, acc, seq, qual, score in b]) for b in read_batches]
+    logging.debug(f"Using total nucleotide batch sizes: {batch_sizes}")
+    batch_lengths = [len(b)  for b in read_batches]
+    logging.debug(f"Nr reads in batches: {batch_lengths}")
     cluster_batches = []
     cluster_seq_origin_batches = []
     lowest_batch_index_db = []
@@ -127,15 +131,14 @@ def parallel_clustering(read_array, p_emp_probs, args):
     signal.signal(signal.SIGINT, original_sigint_handler)
     try:
         mp.set_start_method('spawn')
-        print("Environment set:", mp.get_context())
+        logging.debug(f"Environment set: {mp.get_context()}")
     except RuntimeError:
-        print("Environment already set:", mp.get_context())
+        logging.debug(f"Environment already set: {mp.get_context()}")
     it = 1
     while True:
         # Structure up batches
-        print()
-        print("ITERATION", it)
-        print("Using {0} batches.".format(num_batches))
+        logging.debug(f"\nITERATION {it}")
+        logging.debug("Using {0} batches.".format(num_batches))
 
         if len(read_batches) == 1:
             start_cluster = time()
@@ -143,7 +146,7 @@ def parallel_clustering(read_array, p_emp_probs, args):
             data = {i+1 :((cluster_batches[0], cluster_seq_origin_batches[0], read_batches[0], p_emp_probs, lowest_batch_index_db[0], 1, args), {})} 
             result = reads_to_clusters_helper(data) # { new_batch_index : (Cluster, cluster_seq_origin, H, new_batch_index)}
             Cluster, cluster_seq_origin, _, _ = result[1]
-            print("Time elapesd clustering last iteration single core:", time() - start_cluster)
+            logging.debug(f"Time elapesd clustering last iteration single core: {time() - start_cluster}")
             return Cluster, cluster_seq_origin
 
 
@@ -155,24 +158,24 @@ def parallel_clustering(read_array, p_emp_probs, args):
             res = pool.map_async(reads_to_clusters_helper, data)
             cluster_results =res.get(999999999) # Without the timeout this blocking call ignores all signals.
         except KeyboardInterrupt:
-            print("Caught KeyboardInterrupt, terminating workers")
+            logging.warning("Caught KeyboardInterrupt, terminating workers")
             pool.terminate()
             sys.exit()
         else:
             pool.close()
         pool.join()
 
-        print("Time elapesd multiprocessing:", time() - start_multi)
+        logging.debug(f"Time elapesd multiprocessing: {time() - start_multi}")
 
         start_joining = time()
         all_repr = [] # all_repr = [top_new_seq_origins]
         all_cl = []
         all_minimizer_databases = {}
         for output_dict in cluster_results:
-            print("New batch")
+            logging.debug("New batch")
             for k, v in output_dict.items():
                 new_clusters, new_representatives, minimizer_database_new, batch_index = v
-                print("Batch index", k)
+                logging.debug(f"Batch index {k}")
             # for new_clusters, new_representatives, minimizer_database_new, batch_index in cluster_results: 
                 all_cl.append(new_clusters)
                 all_repr.append(new_representatives)
@@ -182,8 +185,8 @@ def parallel_clustering(read_array, p_emp_probs, args):
         all_representatives = merge_dicts(*all_repr)
         read_array =  [ (i, b_index, acc, seq, qual, score) for i, (i, b_index, acc, seq, qual, score, error_rate, _) in sorted(all_representatives.items(), key=lambda x: x[1][5], reverse=True)]
         new_nr_repr = len(read_array)
-        print("number of representatives left to cluster:", new_nr_repr)
-        print("Time elapesd joining clusters:", time() - start_joining)
+        logging.debug(f"number of representatives left to cluster: {new_nr_repr}")
+        logging.debug(f"Time elapesd joining clusters: {time() - start_joining}")
 
         # Determine new number of batches
         if num_batches == 1:
@@ -194,9 +197,11 @@ def parallel_clustering(read_array, p_emp_probs, args):
         it += 1
         read_batches = [batch for batch in batch_list(read_array, num_batches, batch_type = args.batch_type, merge_consecutive = True)]
         num_batches = len(read_batches)
-        print("Batches after pairwise consecutive merge:", num_batches)
-        print("Using total nucleotide batch sizes:", [sum([len(seq) for i, b_i, acc, seq, qual, score in b]) for b in read_batches] )
-        print("Using nr reads batch sizes:", [len(b)  for b in read_batches] )
+        logging.debug(f"Batches after pairwise consecutive merge: {num_batches}")
+        batch_sizes = [sum([len(seq) for i, b_i, acc, seq, qual, score in b]) for b in read_batches]
+        logging.debug(f"Using total nucleotide batch sizes: {batch_sizes}")
+        batch_lengths = [len(b)  for b in read_batches]
+        logging.debug(f"Using nr reads batch sizes: {batch_lengths}")
         cluster_batches = []
         cluster_seq_origin_batches = []
         lowest_batch_index_db = []

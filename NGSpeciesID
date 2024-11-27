@@ -8,6 +8,7 @@ import errno
 from time import time
 import shutil
 import random
+import logging
 
 from modules import get_sorted_fastq_for_cluster
 from modules import cluster
@@ -30,7 +31,7 @@ def single_clustering(read_array, p_emp_probs, args):
     result_dict = cluster.reads_to_clusters(clusters, representatives, read_array, p_emp_probs, minimizer_database, new_batch_index, args)
     # Unpack result. The result dictionary structure is convenient for multiprocessing return but clumsy in single core mode.
     clusters, representatives, _, _ = list(result_dict.values())[0]
-    print("Time elapesd clustering:", time() - start_cluster)
+    logging.debug(f"Time elapesd clustering: {time() - start_cluster}")
     return clusters, representatives
 
 
@@ -45,16 +46,16 @@ def main(args):
     """
     ##### Sort all reads according to expected errorfree kmers #####
     args.outfile = os.path.join(args.outfolder, "sorted.fastq")
-    print("started sorting seqs")
+    logging.debug("started sorting seqs")
     start = time()
     sorted_reads_fastq_file = get_sorted_fastq_for_cluster.main(args)
-    print("elapsed time sorting:", time() - start)
+    logging.debug(f"elapsed time sorting: {time() - start}")
     #################################################################
 
     ##### Filter and subsample #####
     if args.target_length > 0 and args.target_deviation > 0:
         read_array = [ (i, 0, acc, seq, qual, float(acc.split("_")[-1])) for i, (acc, (seq, qual)) in enumerate(help_functions.readfq(open(sorted_reads_fastq_file, 'r'))) if args.target_length - args.target_deviation <= len(seq) <= args.target_length + args.target_deviation]
-        print("Number of reads with read length in interval [{0},{1}]:".format(args.target_length - args.target_deviation, args.target_length + args.target_deviation), len(read_array))
+        logging.debug("Number of reads with read length in interval [{0},{1}]: {2}".format(args.target_length - args.target_deviation, args.target_length + args.target_deviation, len(read_array)))
     else:
         read_array = [ (i, 0, acc, seq, qual, float(acc.split("_")[-1])) for i, (acc, (seq, qual)) in enumerate(help_functions.readfq(open(sorted_reads_fastq_file, 'r')))]
 
@@ -68,7 +69,7 @@ def main(args):
 
 
     ##### Import precalculated probabilities of minimizer matching given the error rates of reads, kmer length, and window length #####
-    print("Started imported empirical error probabilities of minimizers shared:")
+    logging.debug("Started imported empirical error probabilities of minimizers shared:")
     start = time()
     p_min_shared = p_minimizers_shared.read_empirical_p()
     p_emp_probs = {}
@@ -77,21 +78,22 @@ def main(args):
             p_emp_probs[(float(e1),float(e2))] = float(p)
             p_emp_probs[(float(e2),float(e1))] = float(p)
 
-    print(p_emp_probs)
-    print(len(p_emp_probs))
-    print("elapsed time imported empirical error probabilities of minimizers shared:", time() - start)
+    logging.debug(f"{p_emp_probs}")
+    logging.debug(f"{len(p_emp_probs)}")
+    logging.debug(f"elapsed time imported empirical error probabilities of minimizers shared: {time() - start}")
     ##################################################################################################################################
 
+    logging.info(f"Starting Clustering: {len(read_array)} reads")
     ##### Cluster reads, bulk of code base is here #####
-    print("started clustring")
+    logging.debug("started clustring")
     start = time()
     if args.nr_cores > 1:
         clusters, representatives = parallelize.parallel_clustering(read_array, p_emp_probs, args)
     else:
-        print("Using 1 core.")
+        logging.debug("Using 1 core.")
         clusters, representatives = single_clustering(read_array, p_emp_probs, args)
     # clusters, representatives = cluster.cluster_seqs(read_array, p_emp_probs,  args)
-    print("Time elapsed clustering:", time() - start)
+    logging.debug(f"Time elapsed clustering: {time() - start}")
     ####################################################
 
 
@@ -113,20 +115,19 @@ def main(args):
         
         output_cl_id +=1
 
-    print("Nr clusters larger than 1:", nontrivial_cluster_index) #, "Non-clustered reads:", len(archived_reads))
-    print("Nr clusters (all):", len(clusters)) #, "Non-clustered reads:", len(archived_reads))
+    logging.debug(f"Nr clusters larger than 1: {nontrivial_cluster_index}") #, "Non-clustered reads:", len(archived_reads))
+    logging.debug(f"Nr clusters (all): {len(clusters)}") #, "Non-clustered reads:", len(archived_reads))
     outfile.close()
     origins_outfile.close()
     ############################
 
+    logging.info(f"Finished Clustering: {nontrivial_cluster_index} clusters formed")
 
     if args.consensus:
-        print()
-        print("STARTING TO CREATE CLUSTER CONSENSUS")
-        print()
+        logging.info(f"Starting Consensus creation and polishing")
         work_dir = tempfile.mkdtemp()
-        print("Temporary workdirektory for consensus and polishing:", work_dir)
-        print(
+        logging.debug(f"Temporary workdirectory for consensus and polishing: {work_dir}")
+        logging.debug(
             f"Forming draft consensus with abundance_cutoff >= {abundance_cutoff} "
             f"({args.abundance_ratio * 100}% of {len(read_array)} reads)"
         )
@@ -134,15 +135,15 @@ def main(args):
 
         if args.primer_file or args.remove_universal_tails:
             if args.remove_universal_tails:
-                print("Detecting and removing universal tails")
+                logging.debug("Detecting and removing universal tails")
                 barcodes = barcode_trimmer.get_universal_tails()
             else:
-                print("Detecting and removing primers")
+                logging.debug("Detecting and removing primers")
                 barcodes = barcode_trimmer.read_barcodes(args.primer_file)
 
             barcode_trimmer.remove_barcodes(centers, barcodes, args)
 
-        print("{0} centers formed".format(len(centers)))
+        logging.debug("{0} centers formed".format(len(centers)))
         centers_filtered = consensus.detect_reverse_complements(centers, args.rc_identity_threshold)
         centers_polished = consensus.polish_sequences(centers_filtered, args)
 
@@ -153,9 +154,10 @@ def main(args):
                 centers_polished = consensus.polish_sequences(centers_filtered, args)
 
 
-        print("removing temporary workdir")
+        logging.debug("removing temporary workdir")
         shutil.rmtree(work_dir)
 
+        logging.info(f"Finished Consensus creation: {len(centers_filtered)} created")
 
 
 def write_fastq(args):
@@ -186,8 +188,8 @@ def write_fastq(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Reference-free clustering and consensus forming of targeted ONT or PacBio reads", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--version', action='version', version='%(prog)s 0.3.0')
-
+    parser.add_argument('--version', action='version', version='%(prog)s 0.3.1')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     parser.add_argument('--fastq', type=str,  default=False, help='Path to consensus fastq file(s)')
     parser.add_argument('--flnc', type=str, default=False, help='The flnc reads generated by the isoseq3 algorithm (BAM file)')
     parser.add_argument('--ccs', type=str, default=False, help='Path to consensus BAM file(s)')
@@ -248,21 +250,28 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    loglevel = logging.DEBUG if args.debug else logging.INFO
+
+    logging.basicConfig(
+        level=loglevel,
+        format='%(message)s'
+    )
+
     if args.which == 'write_fastq':
         write_fastq(args)
-        print("Wrote clusters to separate fastq files.")
+        logging.info("Wrote clusters to separate fastq files.")
         sys.exit(0)
 
     if (args.fastq and (args.flnc or args.ccs)):
-        print("Either (1) only a fastq file, or (2) a ccs and a flnc file should be specified. ")
+        logging.error("Either (1) only a fastq file, or (2) a ccs and a flnc file should be specified. ")
         sys.exit()
 
     if (args.flnc != False and args.ccs == False ) or (args.flnc == False and args.ccs != False ):
-        print("isONclust needs both the ccs.bam file produced by ccs and the flnc file produced by isoseq3 cluster. ")
+        logging.error("isONclust needs both the ccs.bam file produced by ccs and the flnc file produced by isoseq3 cluster. ")
         sys.exit()
 
     if args.ont and args.isoseq :
-        print("Arguments mutually exclusive, specify either --isoseq or --ont. ")
+        logging.error("Arguments mutually exclusive, specify either --isoseq or --ont. ")
         sys.exit()
     elif args.isoseq:
         args.k = 15
@@ -289,10 +298,10 @@ if __name__ == '__main__':
     # if edlib_module not in sys.modules:
     #     print('You have not imported the {0} module. Only performing clustering with mapping, i.e., no alignment.'.format(edlib_module))
     if parasail_module not in sys.modules:
-        print('You have not imported the {0} module. Only performing clustering with mapping, i.e., no alignment!'.format(parasail_module))
+        logging.error('You have not imported the {0} module. Only performing clustering with mapping, i.e., no alignment!'.format(parasail_module))
         sys.exit(1)
     if 100 < args.w or args.w < args.k:
-        print('Please specify a window of size larger or equal to k, and smaller than 100.')
+        logging.error('Please specify a window of size larger or equal to k, and smaller than 100.')
         sys.exit(1)
 
     main(args)

@@ -1,5 +1,6 @@
 
 import edlib
+import logging
 
 from modules import help_functions
 
@@ -15,10 +16,10 @@ def read_barcodes(primer_file):
     barcodes = { acc + '_fw' : seq.strip() for acc, (seq, _) in help_functions.readfq(open(primer_file, 'r'))}
 
     for acc, seq in list(barcodes.items()):
-        print(acc, seq,acc[:-3])
+        logging.debug(f"{acc} {seq} {acc[:-3]}")
         barcodes[acc[:-3] + '_rc'] = reverse_complement(seq.upper())
 
-    print(barcodes)
+    logging.debug(f"{barcodes}")
     return barcodes
 
 def get_universal_tails():
@@ -26,7 +27,7 @@ def get_universal_tails():
                  '2_R_rc' : 'ACTTGCCTGTCGCTCTATCTTC'}
     barcodes['1_F_rc'] = reverse_complement(barcodes['1_F_fw'])
     barcodes['2_R_fw'] = reverse_complement(barcodes['2_R_rc'])
-    print(barcodes)
+    logging.debug(f"{barcodes}")
     return barcodes
 
 
@@ -52,7 +53,7 @@ def find_barcode_locations(center, barcodes, primer_max_ed):
                              additionalEqualities=IUPAC_map)
         ed = result["editDistance"]
         locations = result["locations"]
-        print(locations, ed)
+        logging.debug(f"{locations} {ed}")
         if locations:
             all_locations.append((primer_acc, locations[0][0], locations[0][1], ed))
     return all_locations
@@ -75,18 +76,18 @@ def remove_barcodes(centers, barcodes, args):
 
         barcode_locations_beginning = find_barcode_locations(center[:trim_window], barcodes, args.primer_max_ed) 
         barcode_locations_end = find_barcode_locations(center[-trim_window:], barcodes, args.primer_max_ed) 
-        print(center)
+        logging.debug(f"{center}")
         
         cut_start = 0
         if barcode_locations_beginning:
-            print("FOUND BARCODE BEGINNING", barcode_locations_beginning)
+            logging.debug(f"FOUND BARCODE BEGINNING {barcode_locations_beginning}")
             for bc, start, stop, ed in barcode_locations_beginning:
                 if stop > cut_start:
                     cut_start = stop
             
         cut_end = len(center)
         if barcode_locations_end:
-            print("FOUND BARCODE END", barcode_locations_end)
+            logging.debug(f"FOUND BARCODE END {barcode_locations_end}")
             earliest_hit = len(center)
             for bc, start, stop, ed in barcode_locations_end:
                 if start < earliest_hit:
@@ -96,8 +97,8 @@ def remove_barcodes(centers, barcodes, args):
         if cut_start > 0 or cut_end < len(center):
             center = center[cut_start: cut_end]
 
-            print(center, "NEW")
-            print("cut start", cut_start, "cut end", cut_end)
+            logging.debug(f"{center} NEW")
+            logging.debug(f"cut start {cut_start} cut end {cut_end}")
             centers[i][2] = center
             centers_updated = True
 

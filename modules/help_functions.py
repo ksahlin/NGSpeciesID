@@ -1,6 +1,8 @@
 import os
 import errno
 import re
+import logging
+import sys
 
 
 
@@ -43,7 +45,7 @@ def readfq(fp): # this is a generator function
 def mkdir_p(path):
     try:
         os.makedirs(path)
-        print("creating", path)
+        logging.debug(f"creating {path}")
     except OSError as exc:  # Python >2.5
         if exc.errno == errno.EEXIST and os.path.isdir(path):
             pass
@@ -88,8 +90,8 @@ def cigar_to_seq(cigar, query, ref):
             r_index += length_
         
         else:
-            print("error")
-            print(cigar)
+            logging.error("Error processing cigar")
+            logging.error(cigar)
             sys.exit()
 
     return  "".join([s for s in q_aln]), "".join([s for s in r_aln])
