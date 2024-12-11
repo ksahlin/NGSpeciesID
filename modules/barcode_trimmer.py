@@ -1,5 +1,6 @@
 
 import edlib
+import logging
 
 from modules import help_functions
 
@@ -15,10 +16,10 @@ def read_barcodes(primer_file):
     barcodes = { acc + '_fw' : seq.strip() for acc, (seq, _) in help_functions.readfq(open(primer_file, 'r'))}
 
     for acc, seq in list(barcodes.items()):
-        print(acc, seq,acc[:-3])
+        logging.debug(f"{acc} {seq} {acc[:-3]}")
         barcodes[acc[:-3] + '_rc'] = reverse_complement(seq.upper())
 
-    print(barcodes)
+    logging.debug(f"{barcodes}")
     return barcodes
 
 def get_universal_tails():
@@ -26,7 +27,7 @@ def get_universal_tails():
                  '2_R_rc' : 'ACTTGCCTGTCGCTCTATCTTC'}
     barcodes['1_F_rc'] = reverse_complement(barcodes['1_F_fw'])
     barcodes['2_R_fw'] = reverse_complement(barcodes['2_R_rc'])
-    print(barcodes)
+    logging.debug(f"{barcodes}")
     return barcodes
 
 
@@ -45,14 +46,13 @@ def find_barcode_locations(center, barcodes, primer_max_ed):
                  ('X', 'T'), ('X', 'C'), ('N', 'G'), ('N', 'A'), ('N', 'T'), ('N', 'C')]
     all_locations = []
     for primer_acc, primer_seq in barcodes.items():
-        # print(primer_acc, primer_seq,center)
         # Add additionalEqualities=IUPAC_map allow edlib to understand IUPAC code
         result = edlib.align(primer_seq, center,
                              mode="HW", task="locations", k=primer_max_ed,
                              additionalEqualities=IUPAC_map)
         ed = result["editDistance"]
         locations = result["locations"]
-        print(locations, ed)
+        logging.debug(f"{locations} {ed}")
         if locations:
             all_locations.append((primer_acc, locations[0][0], locations[0][1], ed))
     return all_locations
@@ -75,18 +75,18 @@ def remove_barcodes(centers, barcodes, args):
 
         barcode_locations_beginning = find_barcode_locations(center[:trim_window], barcodes, args.primer_max_ed) 
         barcode_locations_end = find_barcode_locations(center[-trim_window:], barcodes, args.primer_max_ed) 
-        print(center)
+        logging.debug(f"{center}")
         
         cut_start = 0
         if barcode_locations_beginning:
-            print("FOUND BARCODE BEGINNING", barcode_locations_beginning)
+            logging.debug(f"FOUND BARCODE BEGINNING {barcode_locations_beginning}")
             for bc, start, stop, ed in barcode_locations_beginning:
                 if stop > cut_start:
                     cut_start = stop
             
         cut_end = len(center)
         if barcode_locations_end:
-            print("FOUND BARCODE END", barcode_locations_end)
+            logging.debug(f"FOUND BARCODE END {barcode_locations_end}")
             earliest_hit = len(center)
             for bc, start, stop, ed in barcode_locations_end:
                 if start < earliest_hit:
@@ -96,37 +96,9 @@ def remove_barcodes(centers, barcodes, args):
         if cut_start > 0 or cut_end < len(center):
             center = center[cut_start: cut_end]
 
-            print(center, "NEW")
-            print("cut start", cut_start, "cut end", cut_end)
+            logging.debug(f"{center} NEW")
+            logging.debug(f"cut start {cut_start} cut end {cut_end}")
             centers[i][2] = center
             centers_updated = True
 
     return centers_updated
-
-    ## Old code scanned all consensus and were prone to errors due to cutting directionality (befause of fwd or rev comp hits of the adapter)
-    # for i, (nr_reads_in_cluster, c_id, center, reads_path_name) in enumerate(centers):
-    #     barcode_locations = find_barcode_locations(center, barcodes, args.primer_max_ed) 
-    #     if barcode_locations:
-    #         print("FOUND BARCODE", barcode_locations)
-    #         cut_start = 0
-    #         cut_end = len(center)
-    #         print(center)
-    #         for bc, start, stop, ed in barcode_locations:
-    #             # print(ed,bc, bc[-4], bc[-2:])
-    #             if bc[-4] == 'F' and bc[-2:] == 'fw':
-    #                 cut_start = stop
-    #             elif bc[-4] == 'R' and bc[-2:] == 'fw': 
-    #                 cut_end = start
-    #             elif bc[-4] == 'R' and bc[-2:] == 'rc':
-    #                 cut_start = stop
-    #             elif bc[-4] == 'F' and bc[-2:] == 'rc': 
-    #                 cut_end = start
-    #             else:
-    #                 print()
-    #                 print("Primer file not in correct format!")
-    #                 print()
-    #         # print(center)
-    #         center = center[cut_start: cut_end]
-    #         print(center, "NEW")
-    #         print("cut start", cut_start, "cut end", cut_end)
-    #         centers[i][2] = center

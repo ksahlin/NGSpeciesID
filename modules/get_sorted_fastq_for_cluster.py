@@ -8,12 +8,12 @@ import multiprocessing as mp
 
 import operator
 import functools
-import errno
 from time import time
 from collections import deque
 import sys
 import itertools
 import math
+import logging
 
 from modules import help_functions
 
@@ -23,16 +23,11 @@ D_no_min = {chr(i) : 10**( - (ord(chr(i)) - 33)/10.0 )  for i in range(128)}
 def expected_number_of_erroneous_kmers(quality_string, k):
     prob_error = [D[char_] for char_ in quality_string]
     window = deque([ (1.0 - p_e) for p_e in prob_error[:k]])
-    # print(window)
     qurrent_prob_no_error = functools.reduce(operator.mul, window, 1)
-    # print(qurrent_prob_no_error)
-    sum_of_expectations = qurrent_prob_no_error # initialization 
+    sum_of_expectations = qurrent_prob_no_error # initialization
     for p_e in prob_error[k:]:
         p_to_leave = window.popleft()
-        # print(window)
-        # print(p_to_leave, "!" in quality_string)
         qurrent_prob_no_error *= ((1.0 -p_e)/(p_to_leave))
-        # print(qurrent_prob_no_error)
         sum_of_expectations += qurrent_prob_no_error
         window.append(1.0 -p_e)
     return len(quality_string) - k + 1 - sum_of_expectations 
@@ -57,7 +52,7 @@ def calc_score_new(d):
     error_rates = []
     for i, (acc, seq, qual) in enumerate(l):
         if i % 10000 == 0:
-            print(i, "reads processed.")
+            logging.debug(f"{i} reads processed.")
 
         # skip very short reads or degenerate reads
         seq_hpol_comp = ''.join(ch for ch, _ in itertools.groupby(seq))
@@ -67,7 +62,6 @@ def calc_score_new(d):
         poisson_mean = sum([ qual.count(char_) * D_no_min[char_] for char_ in set(qual)])
         error_rate = poisson_mean/float(len(qual))
         if 10*-math.log(error_rate, 10) <= q_threshold:
-            # print("Filtered read with:", 10*-math.log(error_rate, 10), error_rate)
             continue
 
         error_rates.append(error_rate)
@@ -88,35 +82,35 @@ def fastq_parallel(args):
     read_batches = [b for b in batch(reads, read_chunk_size)]
     del reads
     ####### parallelize alignment #########
-    # pool = Pool(processes=mp.cpu_count())
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
     signal.signal(signal.SIGINT, original_sigint_handler)
     mp.set_start_method('spawn')
-    print(mp.get_context())
-    print("Environment set:", mp.get_context())
-    print("Using {0} cores.".format(args.nr_cores))
+    logging.debug(f"{mp.get_context()}")
+    logging.debug(f"Environment set: {mp.get_context()}")
+    logging.debug(f"Using {args.nr_cores} cores.")
     start_multi = time()
     pool = Pool(processes=int(args.nr_cores))
     try:
-        print([len(b) for b in read_batches])
+        batch_lengths = [len(b) for b in read_batches]
+        logging.debug(f"{batch_lengths}")
         data = [ {i : (b,k, q_threshold)} for i, b in enumerate(read_batches)] #[ {i+1 :((cluster_batches[i], cluster_seq_origin_batches[i], read_batches[i], p_emp_probs, lowest_batch_index_db[i], i+1, args), {})} for i in range(len(read_batches))]
         res = pool.map_async(calc_score_new, data)
         score_results =res.get(999999999) # Without the timeout this blocking call ignores all signals.
     except KeyboardInterrupt:
-        print("Caught KeyboardInterrupt, terminating workers")
+        logging.warning("Caught KeyboardInterrupt, terminating workers")
         pool.terminate()
         sys.exit()
     else:
         pool.close()
     pool.join()
 
-    print("Time elapesd multiprocessing:", time() - start_multi)
+    logging.debug(f"Time elapesd multiprocessing: {time() - start_multi}")
     read_array, error_rates = [], []
 
     for output_dict in score_results:
         for k, v in output_dict.items():
             r_a, err_rates = v
-            print("Batch index", k)
+            logging.debug(f"Batch index {k}")
             for item in r_a:
                 read_array.append(item)
             for item2 in err_rates:
@@ -134,7 +128,7 @@ def fastq_single_core(args):
     read_array = []
     for i, (acc, (seq, qual)) in enumerate(help_functions.readfq(open(args.fastq, 'r'))):
         if i % 10000 == 0:
-            print(i, "reads processed.")
+            logging.debug(f"{i} reads processed.")
 
         # skip very short reads or degenerate reads
         seq_hpol_comp = ''.join(ch for ch, _ in itertools.groupby(seq))
@@ -151,7 +145,6 @@ def fastq_single_core(args):
         poisson_mean = sum([ qual.count(char_) * D_no_min[char_] for char_ in set(qual)])
         error_rate = poisson_mean/float(len(qual))
         if 10*-math.log(error_rate, 10) <= q_threshold:
-            # print("Filtered read with:", 10*-math.log(error_rate, 10), error_rate)
             continue
         error_rates.append(error_rate)
         ##############################################
@@ -167,7 +160,7 @@ def main(args):
     start = time()
     logfile = open(os.path.join(args.outfolder, "logfile.txt"), 'w')
     if os.path.isfile(args.outfile) and args.use_old_sorted_file:
-        print("Using already existing sorted file in specified directory, in not intended, specify different outfolder or delete the current file.")
+        logging.warning("Using already existing sorted file in specified directory, in not intended, specify different outfolder or delete the current file.")
         return args.outfile
 
     elif args.fastq:
@@ -182,7 +175,7 @@ def main(args):
     for i, (acc, seq, qual, score) in enumerate(read_array):
         reads_sorted_outfile.write("@{0}\n{1}\n+\n{2}\n".format(acc + "_{0}".format(score), seq, qual))
     reads_sorted_outfile.close()
-    print(len(read_array), "reads passed quality critera (avg phred Q val over {0} and length > 2*k) and will be clustered.".format(args.quality_threshold))
+    logging.debug(f"{len(read_array)} reads passed quality critera (avg phred Q val over {args.quality_threshold} and length > 2*k) and will be clustered.")
     error_rates.sort()
     min_e = error_rates[0]
     max_e = error_rates[-1]
@@ -194,26 +187,27 @@ def main(args):
     logfile.write("Mean read error rate:{0}\n".format(mean_e))
     logfile.write("\n")
     logfile.close()
-    print("Sorted all reads in {0} seconds.".format(time() - start) )
+    logging.debug("Sorted all reads in {0} seconds.".format(time() - start) )
     return reads_sorted_outfile.name
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Evaluate pacbio IsoSeq transcripts.")
-    parser.add_argument('--fastq', type=str,  default=False, help='Path to consensus fastq file(s)')
+    reads_file = parser.add_mutually_exclusive_group(required=True)
+    reads_file.add_argument('--fastq', type=str, help='Path to consensus fastq file(s)')
+    reads_file.add_argument('--use_old_sorted_file', action='store_true', help='Using already existing sorted file if present in specified output directory.')
     parser.add_argument('--outfile', type=str,  default=None, help='A fasta file with transcripts that are shared between samples and have perfect illumina support.')
     parser.add_argument('--k', type=int, default=15, help='kmer size')
-    
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+
     args = parser.parse_args()
 
-    if (args.fastq and (args.flnc or args.ccs)):
-        print("Either (1) only a fastq file, or (2) a ccs and a flnc file should be specified. ")
-        sys.exit()
+    loglevel = logging.debug if args.debug else logging.INFO
 
-    if (args.flnc != False and args.ccs == False ) or (args.flnc == False and args.ccs != False ):
-        print("qt-clust needs both the ccs.bam file produced by ccs and the flnc file produced by isoseq3 cluster. ")
-        sys.exit()
-
+    logging.basicConfig(
+        level=loglevel,
+        format='%(message)s'
+    )
 
     if len(sys.argv)==1:
         parser.print_help()
