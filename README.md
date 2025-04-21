@@ -8,25 +8,44 @@ NGSpeciesID is distributed as a python package supported on Linux / OSX with pyt
 Table of Contents
 =================
 
-  * [INSTALLATION](#INSTALLATION)
-    * [Using conda](#Using-conda)
+  * [INSTALLATION](#installation)
+    * [Using conda](#using-conda)
     * [Testing installation](#testing-installation)
-  * [USAGE](#USAGE)
+  * [USAGE](#usage)
     * [Filtering and subsampling](#filtering-and-subsampling)
     * [Removing primers](#removing-primers)
-    * [Output](#Output)
-  * [EXAMPLE WORKFLOW](#EXAMPLE-WORKFLOW)
-  * [CREDITS](#CREDITS)
-  * [LICENCE](#LICENCE)
+    * [Output](#output)
+  * [EXAMPLE WORKFLOW](#example-workflow)
+  * [CREDITS](#credits)
+  * [LICENCE](#licence)
 
 
 
 INSTALLATION
 ----------------
 
-**NOTE**: If you are experiencing issues (e.g. [this one](https://github.com/rvaser/spoa/issues/26)) with the third party tools  [spoa](https://github.com/rvaser/spoa) or [medaka](https://github.com/nanoporetech/medaka) in the all-in-one installation instructions below, please install the tools manually with their respective installation instructions [here](https://github.com/rvaser/spoa#installation) and [here](https://github.com/nanoporetech/medaka#installation).  
+<!---
+**NOTE**: If you are experiencing issues (e.g. [this one](https://github.com/rvaser/spoa/issues/26)) with the third party tools  [spoa](https://github.com/rvaser/spoa) or [medaka](https://github.com/nanoporetech/medaka) in the installation instructions below, please install the tools manually with their respective installation instructions [here](https://github.com/rvaser/spoa#installation) and [here](https://github.com/nanoporetech/medaka#installation).  
+-->
 
 ### Using conda
+
+**Recent update (2025-04-19)**
+
+There have been many version updates of medaka and spoa since NGSpeciesID was first published. Below are instructions to install 
+NGSpeciesID with newer versions of spoa ([v4.1.4](https://bioconda.github.io/recipes/spoa/README.html)) and medaka (v2.0.1).
+
+```
+conda create -n NGSpeciesID python=3.11 pip
+conda activate NGSpeciesID
+conda install --yes -c conda-forge -c bioconda medaka==2.0.1 openblas==0.3.3 spoa racon minimap2  samtools
+pip install NGSpeciesID
+```
+
+Make sure you [test the installation](#testing-installation).
+
+**Published installation instructions (2021-01-11)**
+
 Conda is the preferred way to install NGSpeciesID.
 
 1. Create and activate a new environment called NGSpeciesID
