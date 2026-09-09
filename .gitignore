@@ -1,3 +1,5 @@
-*.pyc
-modules/__pycache__/*
+__pycache__/
+*.py[cod]
+.DS_Store
 .idea
+repo-slim-archive/
