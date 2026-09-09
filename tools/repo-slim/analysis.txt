@@ -1,0 +1,65 @@
+Repository slimming analysis
+============================================================
+
+total distinct blob bytes in history :    0.531 GB
+  to be stripped                     :    0.520 GB  (98.0%)
+  retained (source, scripts, docs)   :    0.005 GB
+  retained fixtures (KEEP list)      :    5.815 MB
+
+paths stripped: 15
+
+Largest paths being removed
+------------------------------------------------------------
+       94.37 MB  test/ccs.fastq.gz.part-aa
+       94.37 MB  test/ccs.fastq.gz.part-ab
+       94.37 MB  test/ccs.fastq.gz.part-ac
+       81.56 MB  test/ccs.fastq.gz.part-ad
+       74.10 MB  test/old_sorted_ens_100k.fastq.tar.gz
+       73.09 MB  test/ENS_100k.fastq.tar.gz
+        6.87 MB  test/sample_alz_2k.fastq
+        1.13 MB  modules/__pycache__/p_minimizers_shared.cpython-36.pyc
+        0.21 MB  test/terncytb_200.fastq
+        0.02 MB  modules/__pycache__/cluster.cpython-36.pyc
+        0.01 MB  test/isonclust1.out
+        0.01 MB  modules/__pycache__/get_sorted_fastq_for_cluster.cpython-36.pyc
+        0.01 MB  modules/.DS_Store
+        0.00 MB  modules/__pycache__/__init__.cpython-36.pyc
+
+Note: git stores each distinct blob once, so identical files at different
+paths are counted under whichever path reaches them first. This is not
+cosmetic -- it reflects real storage. Checked on this history:
+
+  * SEVEN blobs in NGSpeciesID's history are reachable at more than one
+    path, and `git rev-list --objects` reports only one path for each:
+      test/Supplementary_File1_reads.fastq == test/Supplementary_File2_reads.fastq
+      test/Supplementary_File2_minibar.txt == test/Supplementary_File3_minibar.txt
+      test/Supplementary_File3_primer.txt  == test/Supplementary_File4_primer.txt
+      modules/.DS_Store                    == scripts/.DS_Store
+      NGSpeciesID                          == isONclust
+      cemetary/cluster_parallel.py         == modules/cluster_parallel.py
+      modules/compute_shared_minimizers_probabilities.py ==
+        scripts/compute_shared_minimizer_probabilities.py
+    So the deduplication trap DOES bite here: scripts/.DS_Store would not
+    have appeared on a removal list built from the object listing, and the
+    three renamed Supplementary_File pairs are why KEEP names both spellings
+    of each. This list is built from a tree walk, which is the only way to
+    know any of that.
+
+  * test/ccs.fastq.gz was committed as four `split` parts, part-aa..part-ad,
+    365 MB together. They are four blobs, not one file, and archive_data.sh
+    reassembles them (verified with `gzip -t`) before they are destroyed.
+
+  * KEEP protects the five test/ files that are live in HEAD, plus the three
+    historical spellings they share blobs with. Removing either spelling of
+    a renamed pair removes the blob, and the live file with it.
+
+Fixtures explicitly retained
+------------------------------------------------------------
+      399.09 KB  test/sample_h1.fastq
+     5414.47 KB  test/Supplementary_File1_reads.fastq
+     history  test/Supplementary_File2_reads.fastq   (not in HEAD, but present in history)
+        0.91 KB  test/Supplementary_File2_minibar.txt
+     history  test/Supplementary_File3_minibar.txt   (not in HEAD, but present in history)
+        0.06 KB  test/Supplementary_File3_primer.txt
+     history  test/Supplementary_File4_primer.txt   (not in HEAD, but present in history)
+        0.19 KB  test/consensus.sh
