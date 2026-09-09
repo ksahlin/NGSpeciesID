@@ -176,6 +176,22 @@ def main(args):
         reads_sorted_outfile.write("@{0}\n{1}\n+\n{2}\n".format(acc + "_{0}".format(score), seq, qual))
     reads_sorted_outfile.close()
     logging.debug(f"{len(read_array)} reads passed quality critera (avg phred Q val over {args.quality_threshold} and length > 2*k) and will be clustered.")
+
+    if not read_array or not error_rates:
+        # Every read was filtered out. Without this guard the statistics below
+        # raise "IndexError: list index out of range" on error_rates[0], which
+        # is a traceback rather than an explanation. It is easy to reach: on the
+        # 3000 real ONT reads in test/Supplementary_File1_reads.fastq, --q 12
+        # and above filter out everything (--q 11 leaves 2 reads), and --q 12 is
+        # a reasonable thing to ask for.
+        # Exit status is left at 1, which is what the traceback already gave,
+        # so nothing that checks the exit code sees a change.
+        logfile.write("No reads passed the quality filter (--q {0}).\n".format(args.quality_threshold))
+        logfile.close()
+        logging.error("Error: no reads passed the quality filter (--q {0}).".format(args.quality_threshold))
+        logging.error("Lower --q, or check that the input has quality values.")
+        sys.exit(1)
+
     error_rates.sort()
     min_e = error_rates[0]
     max_e = error_rates[-1]
