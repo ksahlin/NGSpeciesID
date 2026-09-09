@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "<PATH>/NGSpeciesID", line <LINE>, in <module>
+    main(args)
+  File "<PATH>/NGSpeciesID", line <LINE>, in main
+    sorted_reads_fastq_file = get_sorted_fastq_for_cluster.main(args)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/get_sorted_fastq_for_cluster.py", line <LINE>, in main
+    min_e = error_rates[0]
+            ~~~~~~~~~~~^^^
+IndexError: list index out of range

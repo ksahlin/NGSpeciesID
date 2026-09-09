@@ -1,0 +1,50 @@
+# The corpora, TAB-separated: name<TAB>path<TAB>reads<TAB>preset<TAB>purpose
+#
+# THE SEPARATOR IS A REAL TAB. Do not let an editor expand it.
+#
+# Both registered corpora are COMMITTED, which is the opposite of the isONclust
+# and isONform registries, where the real data lived outside the repository.
+# Two reasons it is the right call here and not there:
+#
+#   1. They are small. 390 KB and 5.2 MB against isONclust's multi-gigabyte
+#      corpora. The repository has 520 MB of dead test data to strip (see
+#      tools/repo-slim/); these two are not the problem.
+#   2. They are already in HEAD and the README links both. Removing them would
+#      break documentation for the sake of a registry convention.
+#
+# Path resolution: a path starting with `test/` is repo-relative; anything else
+# is relative to $NGSPECIESID_DATA (default ~/data/amplicon); an absolute path
+# is used as-is.
+#
+# WHICH ONE TO DEVELOP AGAINST
+# ----------------------------
+# `sup`. Measured over the 24-case matrix, `smoke` produces 12 distinct results
+# and `sup` produces 19, and `smoke`'s single largest collision group is ELEVEN
+# cases -- including --symmetric_map_align_thresholds, which is the only piece
+# of clustering logic this port has to write from scratch. On `smoke` that flag
+# changes nothing; on `sup` it gives 85 clusters against the default's 49.
+# See PORTING.md, Finding 19. A green run on `smoke` alone is not coverage.
+#
+# WHAT IS MISSING, and it is the largest measurement gap in this port
+# -------------------------------------------------------------------
+#   * A PacBio corpus. --isoseq is a supported preset with no data behind it.
+#   * A corpus with a quality spread. On BOTH corpora --q 0 gives byte-identical
+#     output to the default --q 7, so the filter is only observable from --q 8
+#     up, where it is already discarding most of the data.
+#   * A depth axis. 280 and 3000 reads are two points, and method rule "a
+#     conclusion at one depth is not a conclusion" applies to --sample_size,
+#     --abundance_ratio and --t, none of which has been measured at more than
+#     one depth.
+#   * Reads with primers at known positions, so trimming can be checked against
+#     an answer rather than against the reference's own output.
+#
+# ONE MORE IS AVAILABLE FOR FREE: test/terncytb_200.fastq, 200 real ONT reads of
+# a Cytb/16S amplicon (median length 428, against 632 and 816 here), was
+# committed in a2128c8 and dropped in 11c516f. It is 214 KB and it is the only
+# strippable blob in this history NOT already archived, so it has to be handled
+# either way -- restoring it costs less than archiving it. It does not
+# discriminate --symmetric_map_align_thresholds. See tools/repo-slim/README.md.
+#
+# name	path	reads	preset	purpose
+smoke	test/sample_h1.fastq	280	ont	committed, 390 KB. The README install check and .travis.yml's fixture. One haddock amplicon, `h1` in every header. Median length 632, and one read of length 14 that exercises the 2*k filter. BLIND TO FIVE PARAMETERS -- see Finding 19
+sup	test/Supplementary_File1_reads.fastq	3000	ont	committed, 5.2 MB. The paper's Supplementary Data 1: cod, haddock and whiting on a Flongle, tagged c1/h1/w1 in every header. DEVELOP AGAINST THIS. Median length 816. 19 distinct results of 24 cases; reaches the reverse-complement merge path (4 draft centers, one merged) and primer trimming with the committed IUPAC primer file

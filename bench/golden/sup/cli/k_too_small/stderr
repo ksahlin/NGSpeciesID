@@ -1,0 +1,20 @@
+Starting Clustering: 3000 reads
+Traceback (most recent call last):
+  File "<PATH>/NGSpeciesID", line <LINE>, in <module>
+    main(args)
+  File "<PATH>/NGSpeciesID", line <LINE>, in main
+    clusters, representatives = single_clustering(read_array, p_emp_probs, args)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/NGSpeciesID", line <LINE>, in single_clustering
+    result_dict = cluster.reads_to_clusters(clusters, representatives, read_array, p_emp_probs, minimizer_database, new_batch_index, args)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/cluster.py", line <LINE>, in reads_to_clusters
+    best_cluster_id_m, nr_shared_kmers_m, mapped_ratio = get_best_cluster(read_cl_id, len(seq_hpol_comp), hit_clusters_ids, hit_clusters_hit_positions, minimizers, len(minimizers), hit_clusters_hit_index, representatives, p_emp_probs, args)
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/cluster.py", line <LINE>, in get_best_cluster
+    p_error_in_kmers_emp =  1.0 - p_shared_minimizer_empirical(error_rate_read, error_rate_c, p_emp_probs)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/cluster.py", line <LINE>, in p_shared_minimizer_empirical
+    p_kmer_shared = p_emp_probs[(e1,e2)]
+                    ~~~~~~~~~~~^^^^^^^^^
+KeyError: (0.12, 0.12)

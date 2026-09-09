@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "<PATH>/NGSpeciesID", line <LINE>, in <module>
+    main(args)
+  File "<PATH>/NGSpeciesID", line <LINE>, in main
+    sorted_reads_fastq_file = get_sorted_fastq_for_cluster.main(args)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/get_sorted_fastq_for_cluster.py", line <LINE>, in main
+    read_array, error_rates = fastq_single_core(args)
+                              ^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/get_sorted_fastq_for_cluster.py", line <LINE>, in fastq_single_core
+    exp_errors_in_kmers = expected_number_of_erroneous_kmers(qual, k)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/get_sorted_fastq_for_cluster.py", line <LINE>, in expected_number_of_erroneous_kmers
+    prob_error = [D[char_] for char_ in quality_string]
+                                        ^^^^^^^^^^^^^^
+TypeError: 'NoneType' object is not iterable

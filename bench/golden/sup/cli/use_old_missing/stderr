@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "<PATH>/NGSpeciesID", line <LINE>, in <module>
+    main(args)
+  File "<PATH>/NGSpeciesID", line <LINE>, in main
+    sorted_reads_fastq_file = get_sorted_fastq_for_cluster.main(args)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/get_sorted_fastq_for_cluster.py", line <LINE>, in main
+    for i, (acc, seq, qual, score) in enumerate(read_array):
+                                                ^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'read_array' where it is not associated with a value

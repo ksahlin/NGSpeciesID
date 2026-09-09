@@ -1,0 +1,102 @@
+# The equivalence case matrix, TAB-separated: name<TAB>entry<TAB>args
+#
+# THE SEPARATOR IS A REAL TAB. isONclust's version of this file was first
+# written space-aligned for readability; `read -r name entry args` with IFS=tab
+# then put the whole line into $name, every case ran with NO arguments, and all
+# 29 goldens recorded the same default invocation -- reported as 29 passes.
+# Nothing in the output said so; the case count and the file count were both
+# plausible. equivalence.sh now refuses to run if any line is not tab-separated
+# into three fields. If you edit this file, do not let an editor expand tabs.
+#
+# WHAT IS SWEPT, AND WHAT IS DELIBERATELY NOT
+# -------------------------------------------
+# Every parameter that can change an output file. Two collisions are INTENDED
+# and must stay: `default` == `ont` == `k13w20` pins both the defaults and that
+# --ont resolves to --k 13 --w 20, and `t8` == `t8_total_nt` pins that total_nt
+# is the default --batch_type. Everything else should produce a result no other
+# case produces; on test/Supplementary_File1_reads.fastq the pre-consensus
+# cases already do, bar `--q 0`, which is a property of the data.
+#
+# NOT SWEPT, for reasons:
+#
+#   --sample_size WITHOUT --top_reads.  It is an unseeded random draw: five runs
+#     of the same command at a fixed PYTHONHASHSEED gave five different answers.
+#     No golden for it can mean anything until PORTING.md's Finding 1 is
+#     decided. `equivalence.sh seeds` asserts that nondeterminism explicitly, so
+#     it cannot be forgotten -- and that assertion FAILS if someone fixes it
+#     without updating the harness.
+#
+#   --q 12 and up.  Filters every read on both corpora. That is Finding 7's
+#     crash, now guarded; it has a CLI case rather than an output case, because
+#     it writes no output files.
+#
+#   --k below 10 or above 30, and (k,w) in {11,16,21,26}x{99,100} u
+#     {12,17,22,27}x{100}.  Empty probability table, KeyError (Finding 8). CLI
+#     cases, not output cases.
+#
+#   --d.  Diagnostic only; it changes no output file. --d 0 is a CLI case
+#     (ZeroDivisionError, Finding 11).
+#
+#   --medaka_model.  Needs a specific model downloaded; not reproducible here.
+#
+# THE CONSENSUS CASES NEED EXTERNAL BINARIES on PATH -- spoa for all of them,
+# plus racon and minimap2, plus medaka. `equivalence.sh env` reports which are
+# present and `record` skips the cases whose tool is missing rather than
+# recording a crash as a golden.
+#
+# THE MEDAKA CASES ARE SLOW: about a minute each on the smoke corpus, nearly all
+# of it inside medaka. They are still cases, because --medaka is the flag the
+# README tells everyone to use.
+#
+# name	entry	args
+default	main	--k 13 --w 20 --t 1
+ont	main	--ont --t 1
+isoseq	main	--isoseq --t 1
+k15w15	main	--k 15 --w 15 --t 1
+k20w100	main	--k 20 --w 100 --t 1
+k10w10	main	--k 10 --w 10 --t 1
+k30w100	main	--k 30 --w 100 --t 1
+q8	main	--ont --t 1 --q 8
+q9	main	--ont --t 1 --q 9
+q0	main	--ont --t 1 --q 0
+min_shared2	main	--ont --t 1 --min_shared 2
+min_shared10	main	--ont --t 1 --min_shared 10
+mapped0.3	main	--ont --t 1 --mapped_threshold 0.3
+mapped0.95	main	--ont --t 1 --mapped_threshold 0.95
+aligned0.1	main	--ont --t 1 --aligned_threshold 0.1
+aligned0.9	main	--ont --t 1 --aligned_threshold 0.9
+minfrac0.5	main	--ont --t 1 --min_fraction 0.5
+minfrac1.0	main	--ont --t 1 --min_fraction 1.0
+minprob0.01	main	--ont --t 1 --min_prob_no_hits 0.01
+minprob0.5	main	--ont --t 1 --min_prob_no_hits 0.5
+symmetric	main	--ont --t 1 --symmetric_map_align_thresholds
+symmetric_a0.9	main	--ont --t 1 --symmetric_map_align_thresholds --aligned_threshold 0.9
+m750s50	main	--ont --t 1 --m 750 --s 50
+m800s100	main	--ont --t 1 --m 800 --s 100
+m700s300	main	--ont --t 1 --m 700 --s 300
+top100	main	--ont --t 1 --sample_size 100 --top_reads
+top500	main	--ont --t 1 --sample_size 500 --top_reads
+top_huge	main	--ont --t 1 --sample_size 999999 --top_reads
+t2	main	--ont --t 2
+t4	main	--ont --t 4
+t8	main	--ont --t 8
+t8_total_nt	main	--ont --t 8 --batch_type total_nt
+t8_nr_reads	main	--ont --t 8 --batch_type nr_reads
+t8_rlsq	main	--ont --t 8 --batch_type read_lengths_squared
+t8_isoseq	main	--isoseq --t 8
+cons_racon	main	--ont --t 1 --consensus --racon
+cons_racon_it3	main	--ont --t 1 --consensus --racon --racon_iter 3
+cons_racon_ab02	main	--ont --t 1 --consensus --racon --abundance_ratio 0.02
+cons_racon_max20	main	--ont --t 1 --consensus --racon --max_seqs_for_consensus 20
+cons_racon_rc1	main	--ont --t 1 --consensus --racon --rc_identity_threshold 1.0
+cons_racon_rc05	main	--ont --t 1 --consensus --racon --abundance_ratio 0.02 --rc_identity_threshold 0.5
+cons_primer	main	--ont --t 1 --consensus --racon --primer_file test/Supplementary_File3_primer.txt
+cons_primer_ed0	main	--ont --t 1 --consensus --racon --primer_file test/Supplementary_File3_primer.txt --primer_max_ed 0
+cons_primer_tw50	main	--ont --t 1 --consensus --racon --primer_file test/Supplementary_File3_primer.txt --trim_window 50
+cons_tails	main	--ont --t 1 --consensus --racon --remove_universal_tails
+cons_medaka	main	--ont --t 1 --consensus --medaka
+cons_medaka_fq	main	--ont --t 1 --consensus --medaka --medaka_fastq
+cons_medaka_t8	main	--ont --t 8 --consensus --medaka
+wf_N0	write_fastq	--N 0
+wf_N2	write_fastq	--N 2
+wf_N10	write_fastq	--N 10
