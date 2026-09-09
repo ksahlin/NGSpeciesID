@@ -165,8 +165,8 @@ The history rewrite is on neither branch. It is a force-push, it is reviewed on 
 | `modules/barcode_trimmer.py` | Reference: edlib HW-mode primer and universal-tail location and trimming, with an IUPAC equivalence map. **New; isONclust has no equivalent** |
 | `modules/help_functions.py` | Reference: `readfq`, `cigar_to_seq`, `mkdir_p`. Note `readfq` here does **not** substitute spaces in accessions |
 | `modules/p_minimizers_shared.py` | Reference: a 1.79 MB Python literal — 41 880 rows of empirical minimizer-sharing probabilities, `k` 10–30, `w` 10–100. Data, not code. Identical to isONclust's `k >= 10` subset |
-| `rust/` | The port. Does not exist yet |
-| `bench/` | The equivalence harness. Does not exist yet; carried across from `isONclust/bench/` |
+| `rust/` | The port. Does not exist yet — this is where the next session starts |
+| `bench/` | The equivalence harness, carried across from `isONclust/bench/` and adapted. `equivalence.sh`, `cases.tsv` (51 cases), `corpora.tsv`, `dump_reference.py` (6 stages), `diffsummary.py`, `setup_reference_env.sh`, `golden/{smoke,sup}/`, and its own `README.md`. **Runs; goldens recorded on both corpora** |
 | `tools/repo-slim/` | The staged history-rewrite tooling, carried across from `isONclust/tools/repo-slim/` and adapted. `analyze.sh` has been **run**; `archive_data.sh` and `slim.sh` have not. See *Repo hygiene* |
 | `test/sample_h1.fastq` | 280 ONT reads, 390 KB. The README's install check and the `.travis.yml` fixture. **Blind to five parameters** — *Finding 19* |
 | `test/Supplementary_File1_reads.fastq` | 3 000 ONT reads from three fish species, 5.2 MB. The paper's supplementary data. **This is the corpus to develop against** — *Finding 19* |
@@ -182,14 +182,17 @@ that wrote it.
 
 | Stage | State | Verification |
 | --- | --- | --- |
-| reference environment | **done** | `isonclust-ref` (python 3.12, parasail 1.3.4, edlib 1.3.9) runs the clustering path; `ngs-relaxed` (python 3.12, medaka 2.2.2, spoa 4.1.5, racon 1.5.0, minimap2 2.31, samtools 1.24) runs the whole pipeline. Neither was produced by a documented instruction — see *Goal* |
+| reference environment | **done, and scripted** | `bench/setup_reference_env.sh`: one conda line, no parasail source build. Resolves to python 3.12.14, parasail-python 1.3.4, python-edlib 1.3.9.post1, spoa 4.1.5, racon 1.5.0, minimap2 2.31-r1302, samtools 1.24, medaka 2.2.2 |
 | published install paths measured | **done, and fixed** | all three fail on `osx-arm64`, two also on `osx-64`, all three resolve on `linux-64`. *Goal*. Fixed on `fix/installation` (`76d3f88`), verified end to end from a clean env |
 | reference runs on real data | **done** | 3 000 reads → 49 clusters at `--t 1`, 33 at `--t 8`, in 1.6 s / 0.7 s |
 | determinism gate | **done, and it fails twice** | *Finding 1* (`--sample_size`) and *Finding 2* (Python ≤3.11) |
 | interpreter decision | **taken: pin ≥3.12** | same decision as isONclust, same reason. The README recommending 3.11 is *Finding 2* |
 | `--sample_size` decision | **not taken. This is the one blocking question in the document** | *Finding 1* |
-| CLI contract captured | **partially — 14 cases probed, not yet recorded as goldens** | *The exit-code contract* |
-| output goldens recorded | not started | `bench/` does not exist |
+| CLI contract captured | **done, 44 cases recorded** | `bench/golden/<corpus>/cli/` — exit code, stdout and stderr, scrubbed of paths, timings and traceback line numbers. *The exit-code contract* |
+| output goldens recorded | **done, 51 cases on both corpora** | `bench/golden/<corpus>/manifest.tsv`. Includes every `--consensus` case, both polishers, and the `--t > 1` merge intermediates |
+| goldens are reproducible | **done** | `equivalence.sh stable` records the whole matrix twice and diffs: 191 checks, identical. It found two real defects on the way — *Finding 23* and *Finding 24* |
+| the harness itself is tested | **done** | five deliberately-broken "ports" run against the goldens; see *Has the harness got teeth?* |
+| stage oracles | **written and exercised on both corpora; the replay half waits for the port** | `bench/dump_reference.py` covers six stages, three of them new here. *Finding 25* has the coverage counts |
 | corpora | **done, 2 committed, both measured for discriminating power** | *The corpora*, *Finding 19* |
 | case matrix swept on both corpora | **done** | 24 cases; `Supplementary_File1_reads.fastq` gives 19 distinct results and 1 unintended collision, `sample_h1.fastq` gives 12 and 8 |
 | repository slimmed | **not started; analysed, and the tooling is in the tree and runs** | `tools/repo-slim/analyze.sh` reports 520.1 MB of 530.8 MB strippable (98.0%), 15 paths, and writes a reviewed `removal-paths.txt`. *Repo hygiene* |
@@ -481,17 +484,31 @@ Read *Finding 1* and *Finding 2* before this list.
 ## Verification
 
 Byte-identity is the acceptance criterion, and it is checked, not assumed. `bench/` is carried across
-from `isONclust/bench/` — `equivalence.sh`, `cases.tsv`, `corpora.tsv`, `diffsummary.py`,
-`dump_reference.py`, `setup_reference_env.sh`, `golden/` — and adapted.
+from `isONclust/bench/` and adapted; it exists and runs. `bench/README.md` is its own documentation.
 
 ```bash
-bench/setup_reference_env.sh          # build the pinned reference env, incl. spoa/racon/minimap2/medaka
-bench/equivalence.sh env              # is it usable? is sum() compensated? which tools are present?
-bench/equivalence.sh seeds            # does the reference agree with itself?  <-- run first
-bench/equivalence.sh cli record       # capture the CLI contract
-bench/equivalence.sh record           # record output goldens
-bench/equivalence.sh verify           # run the port, diff against the goldens
+bench/setup_reference_env.sh                       # one conda line; no parasail source build
+export PATH=~/miniforge3/envs/ngspeciesid-ref/bin:$PATH
+bench/equivalence.sh env                           # usable? sum() compensated? which tools?
+bench/equivalence.sh seeds                         # does the reference agree with itself?  <-- FIRST
+CORPUS=sup GOLDEN=$PWD/bench/golden/sup bench/equivalence.sh cli record
+CORPUS=sup GOLDEN=$PWD/bench/golden/sup bench/equivalence.sh record
+CORPUS=sup GOLDEN=$PWD/bench/golden/sup bench/equivalence.sh stable
+CORPUS=sup GOLDEN=$PWD/bench/golden/sup bench/equivalence.sh verify
+bench/equivalence.sh tools                         # a missing binary must be named, not tracebacked
 ```
+
+Where it stands, measured:
+
+| check | result |
+| --- | --- |
+| `env` | 8 checks green; all four external tools present |
+| `seeds`, python 3.12 | **30 green.** Three entries — `--ont --t 1`, `--ont --t 8`, `--ont --t 1 --consensus --racon` — stable across five `PYTHONHASHSEED` values, including all six `--t 8` merge intermediates and the whole racon output tree |
+| `seeds`, python 3.11 | **fails, exit 1**, on `final_cluster_origins.tsv` and `logfile.txt`, and `diffsummary.py` names the column: `error_rate`. This is what proves the gate has teeth |
+| `seeds`, `--sample_size` | asserts *Finding 1* explicitly: 5 identical runs, 5 distinct results. It **fails if someone fixes the defect** without updating the harness |
+| `cli record` | **44 cases** |
+| `record` | **51 cases**, both corpora |
+| `stable` | **191 checks, identical across two recordings** |
 
 **What counts as a difference.** Every file the tool writes, byte for byte:
 
@@ -518,10 +535,41 @@ the interpreter version, whether `sum()` was compensated, **and the version of e
 `PATH`** — spoa, racon, minimap2, medaka. The goldens are only valid for the environment that
 produced them, and here that environment includes four binaries whose output is part of the contract.
 
+### Has the harness got teeth? Measured, and it found four bugs
+
+*A harness that has never failed has not been tested, it has only been run.* So five "ports" were
+built — each a shell wrapper around the reference — and run against the smoke goldens:
+
+| the "port" | cases failed of 51 |
+| --- | --- |
+| the reference itself, unmodified | **0** |
+| the reference with `--min_shared` 5 → 6 | 15 |
+| one digit changed in one `error_rate` field of one file | 48 |
+| the reference plus one extra output file | 51 |
+| the reference minus `logfile.txt` | 48 |
+
+`--min_shared 6` catching only 15 of 51 is a measurement about the **corpus**, not the harness: on
+280 short reads most cases never reach a shared-minimizer count where 5 and 6 differ. Same conclusion
+as *Finding 19*.
+
+Those five runs found **four real defects**, three of them in the harness and one in the reference:
+
+| # | defect | how it presented |
+| --- | --- | --- |
+| 1 | `scrub()` ran `rm -f "$@".bak`, which with two arguments expands to `rm -f <first> <second>.bak` and **deletes the first file** | all 37 CLI cases failed with `diff: .../o: No such file or directory` |
+| 2 | `grep -v` exits 1 on empty input, and under `set -o pipefail` that aborted the run | the run ended **after the last case that wrote files and before the summary line** — it looked like a crash with no verdict. Reached by any case that legitimately writes nothing, which the `write_fastq` cases do |
+| 3 | `medaka_consensus --version` is not a supported invocation and exits non-zero; same `pipefail` shape | `setup_reference_env.sh` ended silently after samtools, skipping medaka *and* the resolved-versions file |
+| 4 | **in the reference:** a failed `--use_old_sorted_file` run leaves an empty `sorted.fastq`, and the retry exits 0 on zero reads | *Finding 23*. Found by `stable`, which records twice in one process: exit 1, then exit 0 |
+
+Defect 2 is the same shape as the one `tools/repo-slim/analyze.sh` had — a `set -e` interaction that
+only fires on a path nobody had taken. Three instances of it in one session is enough to call it a
+pattern: **in these scripts, put `|| true` inside the substitution, not after it.**
+
 ### The exit-code contract
 
-Fourteen cases were probed. Every exit code below is measured, and several of them are wrong in an
-interesting way and are contract regardless:
+**44 cases are recorded** in `bench/golden/<corpus>/cli/`, each with its exit code, stdout and
+stderr. Every exit code below is measured, and several of them are wrong in an interesting way and
+are contract regardless:
 
 | Case | Exit | Note |
 | --- | --- | --- |
@@ -535,17 +583,27 @@ interesting way and are contract regardless:
 | `--w` < `--k`, or `--w` > 100 | 1 | one shared message for both |
 | `--d 0` | 1 | `ZeroDivisionError`. *Finding 11* |
 | `--k 9` (or any `k` outside 10–30) | 1 | `KeyError` on an empty probability table. *Finding 8* |
-| `--q 12` on the 3 000-read corpus | 1 | `IndexError: list index out of range`. *Finding 7* |
+| `--q 12` on the 3 000-read corpus | 1 | was `IndexError: list index out of range`; now two lines saying which flag filtered everything, same exit code. *Finding 7*, fixed in `ea7c209` |
 | `--batch_type weighted` (documented) | 1 | `ValueError: min() iterable argument is empty`. *Finding 5* |
-| `--use_old_sorted_file` with no `sorted.fastq` | 1 | `UnboundLocalError: read_array` |
+| `--use_old_sorted_file` with no `sorted.fastq` | 1 | `UnboundLocalError: read_array` — **but only the first time**: the failed run leaves an empty `sorted.fastq` and the retry exits 0. *Finding 23* |
 | fastq with no trailing newline | 1 | `TypeError: 'NoneType' object is not iterable`. *Finding 12* |
 | `--consensus` with neither `--medaka` nor `--racon` | 1 | `UnboundLocalError: polishing_pattern`, **after** forming and merging every consensus. *Finding 4* |
 | `--consensus --max_seqs_for_consensus 0` | 1 | `CalledProcessError`: spoa died with `SIGABRT` on an empty input file. *Finding 22* |
-| `--use_old_sorted_file --k 25` after sorting at `--k 13` | 1 | `ValueError: not enough values to unpack (expected 8, got 6)`. *Finding 18* |
+| `--use_old_sorted_file --k 25` after sorting at `--k 13` | **1 on `smoke`, 0 on `sup`** | `ValueError: not enough values to unpack (expected 8, got 6)`. It needs a short read, and only the smaller corpus has one. *Finding 18* |
 | `write_fastq` on a fastq with spaces in headers | 1 | `KeyError` on a truncated accession, after writing some files. *Finding 6* |
 
-Also pinned: **argparse accepts any unambiguous prefix**, so `--outfold` works and `clap` will reject
-it. And clap rewrites `field_name` to `--field-name`, so **all 20 multi-word flags need an explicit
+**Prefix matching is three behaviours, not two**, and all three are pinned:
+
+| behaviour | case | result |
+| --- | --- | --- |
+| a prefix matching one flag is accepted | `--outfold` → `--outfolder` | exit 0 |
+| an **exact** match wins over longer flags sharing it | `--m` is `--m` (`target_length`), not ambiguous with `--min_shared`/`--mapped_threshold`/`--medaka…`; `--s` is `--s`, not `--sample_size` | exit **1** — it parses, then dies on the missing `--outfolder` |
+| a prefix matching several flags is rejected | `--me` → `--medaka`, `--medaka_model`, `--medaka_fastq`; `--min` → three; `--r` → four; `--prim` → two | exit 2, with the candidates listed |
+
+The middle row is the one that surprises: `--m 5` is *not* an error. A port that treats `--m` as an
+ambiguous prefix of the six `m` flags rejects a valid invocation.
+
+And clap rewrites `field_name` to `--field-name`, so **all 20 multi-word flags need an explicit
 `long = "..."`**: `--abundance_ratio`, `--aligned_threshold`, `--batch_type`, `--mapped_threshold`,
 `--max_seqs_for_consensus`, `--medaka_fastq`, `--medaka_model`, `--min_fraction`,
 `--min_prob_no_hits`, `--min_shared`, `--primer_file`, `--primer_max_ed`, `--racon_iter`,
@@ -561,14 +619,38 @@ that differs from the flag (`target_length`, `target_deviation`, `nr_cores`, `pr
 24 cases were swept on both committed corpora, at `--t 1`, and the question asked of each was: **do
 any two cases produce the same `final_clusters.tsv`?** A case that duplicates another is not a test.
 
-| corpus | reads | cases | distinct results | crashes | unintended collisions | wall clock |
+First on the 24 pre-consensus cases, comparing `final_clusters.tsv` alone:
+
+| corpus | reads | cases | distinct | crashes | unintended collisions | wall clock |
 | --- | --- | --- | --- | --- | --- | --- |
 | `sample_h1.fastq` | 280 | 24 | 12 | 1 | **8** | 12 s |
 | **`Supplementary_File1_reads.fastq`** | 3 000 | 24 | **19** | 1 | **1** | 38 s |
 
-Multiplicities, so the shape is visible: `sample_h1` gives one group of **11** identical results, one
-of 2, and ten singletons; `Supplementary_File1_reads.fastq` gives one group of 4, one of 2, and
-seventeen singletons.
+`sample_h1` gives one group of **11** identical results, one of 2, and ten singletons; the 3 000-read
+corpus gives one group of 4, one of 2, and seventeen singletons.
+
+Then on the full recorded matrix, comparing **each case's whole set of output files**. That is the
+right comparison and `final_clusters.tsv` alone is not, because `--consensus` does not change the
+clustering: sixteen cases share one `final_clusters.tsv` on the 3 000-read corpus and are
+distinguished entirely by their consensus, polishing and trimming output.
+
+| corpus | cases | **distinct output sets** | collision groups |
+| --- | --- | --- | --- |
+| `smoke` | 51 | **30** | 5 |
+| **`sup`** | 51 | **42** | 4 |
+
+`sup`'s four, all of them explicable:
+
+| group | why |
+| --- | --- |
+| `default` == `ont` == `q0` == `top_huge` | `default`/`ont` is **intended** — it pins that the preset resolves to `--k 13 --w 20`. `q0` and `top_huge` are properties of the data: no read has mean quality between 0 and 7, and `--sample_size 999999` exceeds the read count so the subsample never fires |
+| `t8` == `t8_total_nt` | **intended** — pins that `total_nt` is the default `--batch_type` |
+| `cons_racon` == `cons_racon_rc1` == `cons_primer_ed0` == `cons_primer_tw50` | `--rc_identity_threshold 1.0` merges nothing, which on this data is what 0.9 already did; `--primer_max_ed 0` and `--trim_window 50` both find no primer, so both equal plain racon. Real information: they are the negative controls for the two cases that *do* trim |
+| `wf_N0` == `wf_N2` == `wf_N10` | all three crash identically, before `--N` is ever read. *Finding 6* |
+
+`smoke`'s five include everything above **plus** seven consensus cases collapsing into one (it has a
+single abundant cluster and no primers are found in it) and `m750s50` == `m800s100`. Twelve of its
+cases collapse onto `default`, `--symmetric_map_align_thresholds` among them.
 
 Two collisions are intended on both and must stay: `default` == `k13w20` pins the defaults, and
 `ont` == `k13w20` pins that the preset resolves to `--k 13 --w 20`. What the small corpus hides is
@@ -1039,6 +1121,20 @@ NGSpeciesID --use_old_sorted_file        --outfolder out --t 1 --k 25 --w 50
 Also reachable with a hand-written `sorted.fastq` containing a read of 60 bases in 5 homopolymer runs
 — `len(seq) >= 2*k` passes, `len(hpol) < k` does not.
 
+**And it is the one place the corpora invert.** The read has to survive the `--k 13` sort filter
+(`len(seq) >= 26`, `len(hpol) >= 13`) and fail cluster.py's `--k 25` guard (`len(hpol) < 25`), which
+means it has to be short. Counted:
+
+| corpus | reads | reads that reach *Finding 18* | exit |
+| --- | --- | --- | --- |
+| `sample_h1` | 280 | **4** | 1, `ValueError: not enough values to unpack (expected 8, got 6)` |
+| `Supplementary_File1_reads.fastq` | 3 000 | **0** | 0, 334 clusters |
+
+So the corpus that is blind to five parameters (*Finding 19*) and finds no primers at all
+(*Finding 25*) is the only one that reaches this crash — its shortest read is 14 bases against the
+other's 183. **Keep both, and record this case's golden on both**: it is the clearest illustration in
+the project that "the bigger corpus" is not the same thing as "the better corpus".
+
 Contract. The underlying problem is that `--use_old_sorted_file` reuses a file sorted under different
 parameters with no record of what they were; writing `--k`/`--w`/`--q` into the logfile and refusing
 a mismatch is the fix, and it is deferred.
@@ -1058,7 +1154,9 @@ hash:
 
 On `Supplementary_File1_reads.fastq` every one of those is distinct, and
 `--symmetric_map_align_thresholds` gives **85 clusters against the default's 49** — a large, obvious
-effect that the smaller corpus cannot see at all. `--q 0` is the one remaining unintended collision
+effect that the smaller corpus cannot see at all — and combining it with `--aligned_threshold 0.9`
+gives a third result distinct from both it and `aligned0.9` alone, so the flag's interaction with the
+alignment gate is covered too. `--q 0` is the one remaining unintended collision
 there, and it is a property of the data (no read has mean quality between 0 and 7) rather than of the
 sweep. `--q 8` and `--q 9` do discriminate, at 31 and 14 clusters, and should replace `--q 0` and
 `--q 15` in `cases.tsv`.
@@ -1123,6 +1221,76 @@ Contract: exit non-zero. A native POA has to decide what it does with an empty i
 process" is not a behaviour worth reproducing faithfully — so this is one of the few places where the
 port's `spoars` path will need an explicit guard *and* a matching exit code, and it needs its own
 case. Rejecting `--max_seqs_for_consensus 0` in the parser is the fix and it is deferred.
+
+### Finding 23 — a failed `--use_old_sorted_file` run poisons the folder, and the retry exits 0
+
+`get_sorted_fastq_for_cluster.main` opens `sorted.fastq` for writing *before* the branch that would
+have filled it, so a run that fails leaves an **empty** `sorted.fastq` behind. The next run in the
+same folder then takes the "use the existing sorted file" path:
+
+```
+$ NGSpeciesID --use_old_sorted_file --outfolder out --t 1 --ont
+UnboundLocalError: cannot access local variable 'read_array'        exit 1
+$ ls out
+logfile.txt  sorted.fastq        # both zero bytes
+
+$ NGSpeciesID --use_old_sorted_file --outfolder out --t 1 --ont
+Using already existing sorted file in specified directory, ...
+Starting Clustering: 0 reads
+Finished Clustering: 0 clusters formed                              exit 0
+```
+
+So a pipeline that retries after a failure gets a **clean exit and an empty `final_clusters.tsv`**,
+which is worse than the failure it was retrying. The same shape reaches any workflow that reuses an
+output folder.
+
+**Found by the harness, not by reading the code.** `bench/equivalence.sh stable` records the whole
+matrix twice in one process, and this case's exit code was 1 the first time and 0 the second — which
+is precisely the class of defect that check exists for, and which no single recording could see.
+
+Contract for the port. The fix is to open `sorted.fastq` only on the branch that writes it, and it is
+one line; deferred.
+
+### Finding 24 — medaka's BAM embeds absolute paths, so it cannot be a byte-identity target
+
+`medaka_cl_id_<id>/calls_to_draft.bam` carries minimap2's and samtools' own command lines in its
+`@PG` header, and those command lines contain the **absolute path** of the output folder:
+
+```
+@PG ID:minimap2  ... CL:minimap2 -x map-ont ... /tmp/xyz/consensus_reference_17.fasta /tmp/xyz/reads_to_consensus_17.fastq
+@PG ID:samtools  ... CL:samtools view -@ 1 -T /tmp/xyz/consensus_reference_17.fasta -F 2308 -bS -
+```
+
+Every harness case runs in a fresh temporary directory, so the file can never match across two runs
+and it is excluded from the contract along with its `.bai`. Its *existence* still is.
+
+Two things worth noting rather than assuming:
+
+1. `consensus_probs.hdf` is **not** excluded. It was measured stable across the same comparison, and
+   excluding a file because it is the kind of file that might vary is how a contract quietly stops
+   covering anything.
+2. This was found by running `verify` against a "port" that **was** the reference — 48 of 51 cases
+   passed and the three medaka cases failed on exactly these two files. Nothing in the reference or
+   the goldens would have said so.
+
+### Finding 25 — the smoke corpus finds no primers at all, so the barcode oracle is vacuous on it
+
+*Finding 19* measured the case matrix. This measures the stage oracles, and the answer is worse.
+`bench/dump_reference.py` was run on both committed corpora:
+
+| stage | `sample_h1` (280 reads) | `Supplementary_File1_reads.fastq` (3 000) |
+| --- | --- | --- |
+| `minimizers` | 25 433 minimizers | 374 918 |
+| `mapping` | 928 recorded decisions | 27 215 |
+| `parasail` | 121 alignments | 960 |
+| `spoa` | 255 lines, 2 POA calls | 2 766 |
+| `identity` | **1** center pair (RC orientation won) | 6 pairs, RC won 4 |
+| `barcode` | 16 edlib calls, **0 found a primer** | 32 calls, **6 found a primer** |
+
+So on `sample_h1` the `barcode` oracle exercises the edlib call and **never the cut-position logic**
+— `remove_barcodes` computes no cut at all — and `identity` has exactly one pair, which cannot
+distinguish an ordering bug from a correct implementation. `equivalence.sh stage` prints these counts
+for that reason: a pass on a corpus that reaches nothing must look different from coverage.
 
 ## The reference environment is not `pip install -r requirements.txt`
 
@@ -1268,6 +1436,7 @@ measurement. Ordered by how much they matter.
 | *Finding 18* | record `--k`/`--w`/`--q` in the logfile and refuse a `--use_old_sorted_file` mismatch | closes the only route to the 6-vs-8 tuple crash |
 | *Finding 22* | reject `--max_seqs_for_consensus 0` in the parser | stops handing spoa an empty file and taking a `SIGABRT` |
 | *Finding 20* | document that `--abundance_ratio` applies after subsampling, and floor the cutoff at 1 | stops singletons reaching spoa at small `--sample_size` |
+| *Finding 23* | open `sorted.fastq` only on the branch that writes it | stops a failed run poisoning its output folder so the retry exits 0 on zero reads. One line, and the most user-visible of the small ones |
 | *Finding 2* | `math.fsum` at the four `sum(...for...in set(...))` sites | makes Python ≤3.11 agree with ≥3.12. **Not applied**: the decision was to pin the interpreter instead. Written up so the option stays visible |
 
 ### Documentation and packaging, which are not port work but are the reason for it
@@ -1348,6 +1517,12 @@ measurements behind each point, are in those repositories' `PORTING.md`.
   comparing two programs that were meant to differ and calling it a failure. Corollary earned in the
   isONclust port: **a harness that has never failed has not been tested, it has only been run.**
   Deliberately break the port and confirm the harness notices.
+* **Do not edit a script while it is running.** bash reads a script incrementally, from a byte
+  offset, so editing `bench/equivalence.sh` during a 20-minute recording made the running shell
+  resume inside changed text: it died with `line 1140: d: unbound variable` and left a manifest that
+  looked complete. The goldens were thrown away and re-recorded. Nothing in the output identified the
+  cause, and the manifest's own provenance header could not have — it records the environment, not
+  whether the harness changed underneath it.
 * **A check that runs on one machine measures that machine.** Every number in this document came from
   one arm64 Mac. Two of the most important — that `medaka==2.0.1` and `python=3.6` are unavailable —
   are *platform-specific by construction*, and the linux-64 story is different: medaka 2.2.x is there
@@ -1402,13 +1577,15 @@ want more.
    isONclust, build the removal list from a tree walk (*Finding 21*), check the four tags, and check
    whether the archive already exists from the isONclust exercise before taking it again. Ends in a
    force-push; that is a separate human decision.
-6. **Stand up `bench/`** by carrying `isONclust/bench/` across: `setup_reference_env.sh` extended with
-   the four external binaries, `equivalence.sh env` reporting which are present, `corpora.tsv` with
-   the two committed corpora, `cases.tsv` extended with `--t`, `--batch_type` and the `--consensus`
-   cases, and the golden manifest recording the tool versions as well as the interpreter.
-7. **Record the CLI contract and the output goldens** on both corpora. The exit-code table in this
-   document is the checklist; turn it into `bench/golden/cli/`.
-8. **Port the CLI**, locked by unit tests and the differential cases.
+6. ~~Stand up `bench/`.~~ **Done.** `setup_reference_env.sh` (one conda line, no parasail source
+   build), `equivalence.sh` with `env`/`seeds`/`cli`/`record`/`verify`/`stable`/`tools`/`stage`,
+   `cases.tsv` with 51 cases including every `--consensus` combination, `corpora.tsv`,
+   `dump_reference.py` with six stages, and `bench/README.md`.
+7. ~~Record the CLI contract and the output goldens.~~ **Done**, on both corpora: 44 CLI cases and
+   51 output cases, `stable` green over 191 checks, and the harness itself tested against five
+   deliberately-broken ports (*Has the harness got teeth?*).
+8. **Port the CLI**, locked by unit tests and the 44 differential cases. This is where the Rust work
+   starts, and it is the next thing to do.
 9. **Bring the isONclust Rust port across** and re-verify it against *this* reference, which has been
    measured to work at 12 configurations but not yet at the full case matrix. Delete the
    `replace(" ", "_")` in `readfq`. Restrict the probability table to `k >= 10` (*Finding 8*).
@@ -1451,13 +1628,37 @@ and needs the author's decision, and the history rewrite, which is a force-push.
 
 | sha | Contents | Message |
 | --- | --- | --- |
-| — | `PORTING.md` | `Add the Rust port plan, reconnaissance and findings` |
-| — | `tools/repo-slim/` | `tools: add the staged history-rewrite tooling` |
+| `981e1d3` | `PORTING.md` | `Add the Rust port plan, reconnaissance and findings` |
+| `0b047c0` | `tools/repo-slim/` | `tools: add the staged history-rewrite tooling` |
+| — | `bench/` | `bench: add the equivalence harness, corpora registry and goldens` |
 
 `analyze.sh` has been run and its output — `removal-paths.txt`, `analysis.txt` — is committed;
-`archive_data.sh` and `slim.sh` have not been run. `bench/` and `rust/` land here as they are written.
+`archive_data.sh` and `slim.sh` have not been run. `rust/` lands here when it is written.
 
 `develop` should get `master` merged in once `fix/installation` lands, so the port is developed
 against the fixed reference rather than the broken one. That matters for more than tidiness: the
-`--q` guard changes what `--q 12` does, so any golden recorded before the merge would be recorded
-against a reference that no longer exists.
+`--q` guard changes what `--q 12` prints, and `cli/q_filters_all` is a recorded golden — so the
+goldens in `bench/golden/` were deliberately recorded **with** the guard applied, and re-recording
+after the merge should be a no-op. Check that it is.
+
+## What is next, concretely
+
+The reconnaissance is finished and so is the harness. Everything from here is Rust, in this order:
+
+1. **`rust/` skeleton and the CLI.** 38 flags, 20 needing explicit `long`, 8 double-dash
+   single-letter, 5 with a `dest` that differs from the flag, argparse prefix matching in all three
+   of its behaviours, and the `write_fastq` subcommand behind a required top-level group. Locked by
+   the 44 recorded CLI cases — `equivalence.sh cli verify` is the whole acceptance test, and 37 of
+   the 44 are checkable before any clustering exists.
+2. **Bring the isONclust engine across.** Measured to reproduce this reference at 12 configurations;
+   re-verify against the full 51-case matrix. Delete `readfq`'s `replace(" ", "_")`. Restrict the
+   probability table to `k >= 10`.
+3. **`--m`/`--s`, `--top_reads`**, then `--sample_size` once *Finding 1* is settled.
+4. **`--symmetric_map_align_thresholds`**, with `stage parasail` as its oracle — the dump already
+   carries the second alignment ratio the flag reads — verified on `sup`, where it is visible.
+5. **The consensus stage**, in dependency order, each against the oracle that already exists for it:
+   `form_draft_consensus` + `spoars` (`stage spoa`), `highest_aln_identity` (`stage identity`),
+   `detect_reverse_complements`, `find_barcode_locations` + the edlib HW tie-break measurement
+   (`stage barcode`), `remove_barcodes`, then the medaka and racon drivers.
+6. **CI on Linux and macOS, x86_64 and arm64.** Method point 7, and doubly so here: the central
+   claim of this document is platform-specific and was measured on one machine.
