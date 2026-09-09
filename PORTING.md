@@ -509,6 +509,7 @@ Where it stands, measured:
 | `cli record` | **44 cases** |
 | `record` | **51 cases**, both corpora |
 | `stable` | **191 checks, identical across two recordings** |
+| `verify` against a "port" that IS the reference | **51 of 51 output cases and 37 of 37 checkable CLI cases green, on BOTH corpora.** The other 7 CLI cases are `pending` — valid invocations that need the clustering stages to exist |
 
 **What counts as a difference.** Every file the tool writes, byte for byte:
 
@@ -542,7 +543,7 @@ built — each a shell wrapper around the reference — and run against the smok
 
 | the "port" | cases failed of 51 |
 | --- | --- |
-| the reference itself, unmodified | **0** |
+| the reference itself, unmodified | **0** — and 0 on the 3 000-read corpus too |
 | the reference with `--min_shared` 5 → 6 | 15 |
 | one digit changed in one `error_rate` field of one file | 48 |
 | the reference plus one extra output file | 51 |

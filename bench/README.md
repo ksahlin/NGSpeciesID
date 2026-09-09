@@ -89,7 +89,7 @@ each a shell wrapper around the reference, and run against the smoke goldens:
 
 | the "port" | cases failed of 51 |
 | --- | --- |
-| the reference itself | **0** |
+| the reference itself | **0** — and 0 on `sup` as well |
 | the reference with `--min_shared` 5 → 6 | 15 |
 | one digit changed in one `error_rate` field | 48 |
 | the reference plus one extra output file | 51 |
