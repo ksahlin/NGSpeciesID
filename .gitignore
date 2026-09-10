@@ -6,3 +6,6 @@ repo-slim-archive/
 
 # pip install -e . leaves this behind, and bench/setup_reference_env.sh does that.
 *.egg-info/
+
+# Rust build output.
+rust/target/

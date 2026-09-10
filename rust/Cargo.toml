@@ -1,0 +1,30 @@
+[package]
+name = "ngspeciesid"
+# Cargo requires semver. The user-visible version string is NOT this: it lives
+# in src/text/version.txt, extracted verbatim from the recorded golden, and is
+# what `--version` prints. Do not "fix" --version to read CARGO_PKG_VERSION --
+# the two are allowed to drift and the golden is the contract.
+version = "0.3.2"
+edition = "2021"
+# 1.85, matching the isONcorrect, isONform and isONclust ports. The modules
+# carried across from them (parasail.rs, align.rs) need at least 1.82, and
+# pinning all four repositories to one version means a toolchain that builds
+# any of them builds all of them.
+rust-version = "1.85"
+description = "Clustering and consensus of long-read amplicon data (Rust port of NGSpeciesID)"
+license = "GPL-3.0"
+
+# The binary must be named exactly `NGSpeciesID`. Capitals in the middle, and
+# macOS is case-insensitive by default, so a wrong spelling resolves locally and
+# fails the first time it meets an ext4 filesystem. isONform's CI lost a day to
+# exactly this.
+[[bin]]
+name = "NGSpeciesID"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
