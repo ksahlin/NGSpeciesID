@@ -10,7 +10,7 @@ Table of Contents
 
   * [INSTALLATION](#installation)
     * [Using conda](#using-conda)
-    * [Reproducibility note for --sample_size](#reproducibility-note-for---sample_size)
+    * [Reproducibility](#reproducibility)
     * [Testing installation](#testing-installation)
   * [USAGE](#usage)
     * [Filtering and subsampling](#filtering-and-subsampling)
@@ -75,15 +75,26 @@ conda activate NGSpeciesID
 pip install --no-deps NGSpeciesID
 ```
 
-### Reproducibility note for `--sample_size`
+### Reproducibility
 
-`--sample_size` draws a **random** subset of reads and the draw is not seeded, so two runs of the
-same command produce different clusters and different consensus sequences. Add `--top_reads` to take
-the highest-quality reads instead of a random selection, which is reproducible:
+Running the same command on the same input gives the same answer, down to the polished consensus
+sequences. Two things are worth knowing about that:
 
-```
-NGSpeciesID --ont --sample_size 500 --top_reads --m 750 --s 50 --consensus --medaka --fastq [reads.fastq] --outfolder [/path/to/output]
-```
+* **`--sample_size` is seeded.** It draws a random subset of reads, and the draw comes from `--seed`
+  (default 0), so it is reproducible. Pass a different `--seed` to draw a different subset — useful
+  for checking how sensitive a consensus is to which reads went into it. This is the only randomness
+  in the tool.
+
+  Before v0.3.2 the draw was **not** seeded, so two runs of the same `--sample_size` command gave
+  different clusters and different consensus sequences. If you are comparing against results
+  produced by an older version, they will not match.
+
+* **Use python 3.12 or newer.** On python 3.11 and earlier, `sum()` over a set of floats is
+  order-dependent, so the read error rates NGSpeciesID reports can differ in their last digits
+  between runs of the same command.
+
+`--top_reads` is a different thing and still available: it takes the `--sample_size` highest-scoring
+reads instead of a random subset, and ignores `--seed`.
 
 ### Testing installation
 
@@ -145,14 +156,15 @@ NGSpeciesID --ont --sample_size 300 --m 750 --s 50 --consensus --medaka --fastq 
 
 By default, length filtering and subsampling are not invoked if parameters are not specified.
 
-`--sample_size` on its own takes a **random** subset, and the draw is not seeded — so the same
-command run twice gives different clusters and different consensus sequences. Add `--top_reads` to
-take the `--sample_size` highest-scoring reads instead, which is reproducible and is what you
-probably want:
+`--sample_size` takes a **random** subset, drawn from `--seed` (default 0), so the same command run
+twice gives the same answer. Pass a different `--seed` for a different subset:
 
 ```
-NGSpeciesID --ont --sample_size 300 --top_reads --m 750 --s 50 --consensus --medaka --fastq [reads.fastq] --outfolder [/path/to/output]
+NGSpeciesID --ont --sample_size 300 --seed 7 --m 750 --s 50 --consensus --medaka --fastq [reads.fastq] --outfolder [/path/to/output]
 ```
+
+`--top_reads` takes the `--sample_size` highest-scoring reads instead of a random subset, and ignores
+`--seed`.
 
 Note also that `--abundance_ratio` (the `--consensus` cluster-size threshold, default 0.1) is applied
 to the **subsampled** read count, not to the whole file: with `--sample_size 300` it means "at least
@@ -292,10 +304,9 @@ NGSpeciesID --ont --consensus --sample_size 500 --m 800 --s 100 --medaka --prime
 Here, the parameters are set as:
 - the data is from ONT MinION (`--ont`)
 - we want to generate consensus sequences (`--consensus`)
-- subsample of reads (`--sample_size`) = 500 reads subsampled per sample to analyze. This is a
-  **random**, unseeded draw, so rerunning the command gives a different answer; add
-  `--top_reads` if you need the run to be reproducible (see
-  [Filtering and subsampling](#filtering-and-subsampling))
+- subsample of reads (`--sample_size`) = 500 reads subsampled per sample to analyze. The draw is
+  random but seeded, so rerunning the command gives the same answer; pass `--seed` for a different
+  subsample (see [Filtering and subsampling](#filtering-and-subsampling))
 - intended target length (`--m`) = 800 base pairs
 - maximum deviation from target length (`--s`) = 100 base pairs
 - use [Medaka](https://github.com/nanoporetech/medaka) to polish the final consensus sequences (`--medaka`)
