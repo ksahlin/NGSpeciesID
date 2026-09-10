@@ -369,17 +369,53 @@ cmd_seeds_sample_size() {
 # without giving the divergence its own commit and a note in PORTING.md.
 
 
-# Two different reasons a CLI case cannot pass, kept apart on purpose. Calling
-# them both "pending" would hide the fact that one of them will never resolve.
+# The 44 CLI cases fall into three classes, and keeping them apart is the whole
+# point -- lumping them together would either hide a real failure or produce
+# fifteen permanent red lines that everyone learns to ignore.
 #
-# PENDING: the invocation is valid, so the reference goes on to run the tool.
-# These pass once the corresponding stages exist.
-CLI_NEEDS_STAGES=" d_zero ont_over_k k_then_ont isoseq_over_w medaka_no_consensus abbrev_outf use_old_k_mismatch "
+#   EXACT (23)      byte-identical stdout, stderr and exit code. Checkable
+#                   today, before any clustering exists: the argparse errors,
+#                   --help/--version, and the three validation messages that
+#                   fire before main() runs.
+#   TRACEBACK (15)  the reference exits through a Python traceback. Exit code
+#                   and "says something, and it is not a stack trace" are the
+#                   contract; the text is a deliberate divergence.
+#   PENDING (6)     a valid invocation, so the reference runs the tool. Exactly
+#                   matchable once the stages exist, not before.
+#
+# 23 + 15 + 6 = 44. If that stops adding up, a case was added without being
+# classified, and `cmd_cli` says so rather than guessing.
 
-# DIVERGENT BY DESIGN. Nothing is dropped in this port -- see PORTING.md, Scope
-# -- so unlike isONclust's harness this list is EMPTY, and the `dropped`
-# subcommand it existed for is replaced by `tools`, which checks that a missing
-# external binary is named rather than tracebacked.
+# PENDING: the invocation is valid, so the reference goes on to run the tool.
+# These become exactly matchable once the corresponding stages exist.
+CLI_NEEDS_STAGES=" abbrev_outf ont_over_k k_then_ont isoseq_over_w medaka_no_consensus q_filters_all "
+
+# TRACEBACK: the reference's stderr is a Python traceback -- fifteen of them,
+# every one a reproduced crash from PORTING.md's exit-code table. A Rust port
+# cannot emit Python stack frames and should not pretend to: the information
+# content of `KeyError: (0.08, 0.08)` plus eleven frames of `File "...", line N`
+# is "an exception happened", and a port that printed it verbatim would be
+# lying about its own implementation.
+#
+# So the contract for these is narrower than byte-identity, and it is asserted
+# rather than skipped:
+#
+#   1. the same exit code as the reference;
+#   2. non-empty stderr -- it must say something;
+#   3. NOT a traceback, and at most TRACEBACK_MAX_LINES lines. A port that
+#      dumps a Rust panic with RUST_BACKTRACE is no better than the Python.
+#
+# This is a deliberate divergence and it has its own note in PORTING.md. It is
+# also the one place the port is expected to be *better* than the reference: a
+# user who passes --k 9 should be told that --k 9 has no probability table, not
+# handed a KeyError on a tuple of two floats.
+CLI_TRACEBACK=" batch_bogus batch_weighted consensus_no_polisher d_zero exact_f exact_m k_too_big k_too_small kw_gap max_seqs_zero no_outfolder no_trailing_nl use_old_k_mismatch use_old_missing wf_spaces "
+TRACEBACK_MAX_LINES=6
+
+# DIVERGENT BY DESIGN, in the sense isONclust's harness used the word: a golden
+# that can never match because the port deliberately does something else.
+# Nothing is dropped in this port -- see PORTING.md, Scope -- so this stays
+# empty, and the `dropped` subcommand it existed for is replaced by `tools`.
 CLI_DIVERGENT=" "
 
 cli_case() { # cli_case <name> <args...>
@@ -404,6 +440,10 @@ cli_case() { # cli_case <name> <args...>
     fi
     if [[ "$CLI_DIVERGENT" == *" $name "* ]]; then
       info "divergent by design cli/$name"
+      return 0
+    fi
+    if [[ "$CLI_TRACEBACK" == *" $name "* ]]; then
+      cli_case_traceback "$name" "$d" "$@"
       return 0
     fi
     set +e
@@ -447,6 +487,34 @@ scrub() {
   # goldens. Suffix each element individually.
   local f
   for f in "$@"; do rm -f "$f.bak"; done
+}
+
+# The narrower contract for a case whose golden stderr is a Python traceback.
+# Deliberately does NOT diff the text -- see CLI_TRACEBACK for why -- but it is
+# not a skip either: all three of these can fail.
+cli_case_traceback() { # cli_case_traceback <name> <golden dir> <args...>
+  local name="$1" d="$2"; shift 2
+  set +e
+  "$PORT_BIN" "$@" >"$WORK/o" 2>"$WORK/e"; local rc=$?
+  set -e
+  local want_rc; want_rc="$(cat "$d/exit")"
+  local lines; lines="$(wc -l < "$WORK/e" | tr -d ' ')"
+  local problems=()
+  [[ "$rc" == "$want_rc" ]] || problems+=("exit $rc want $want_rc")
+  [[ -s "$WORK/e" ]] || problems+=("stderr is empty -- it must say something")
+  grep -q "^Traceback (most recent call last):" "$WORK/e" 2>/dev/null \
+    && problems+=("stderr is a Python traceback")
+  grep -qE "^(thread .* panicked at|stack backtrace:)" "$WORK/e" 2>/dev/null \
+    && problems+=("stderr is a Rust panic -- no better than the traceback")
+  [[ "${lines:-0}" -le "$TRACEBACK_MAX_LINES" ]] \
+    || problems+=("stderr is $lines lines, want <= $TRACEBACK_MAX_LINES")
+  if [[ ${#problems[@]} -eq 0 ]]; then
+    ok "cli/$name (traceback case: exit $rc, $lines line(s) of message)"
+  else
+    bad "cli/$name: ${problems[*]}"
+    head -3 "$WORK/e" | sed 's/^/          port| /'
+  fi
+  return 0
 }
 
 cmd_cli() {
@@ -588,8 +656,67 @@ cmd_cli() {
   if [[ -s "$uo/sorted.fastq" ]]; then
     cli_case use_old_k_mismatch --use_old_sorted_file --outfolder "$uo" --t 1 --k 25 --w 50
   else
-    info "skipping cli/use_old_k_mismatch -- could not produce a sorted.fastq"
+    bad "cli/use_old_k_mismatch: could not produce a sorted.fastq to reuse"
   fi
+
+  # LAST, so it sees every case. It is also what caught this function being
+  # accidentally closed early: the audit counted 44 recorded and the run
+  # reported 43, because the block above had ended up inside cli_audit's body
+  # after its `return 0` and never executed.
+  cli_audit
+}
+
+# Every recorded case must be in exactly one class. A case added without being
+# classified silently gets the strictest treatment -- byte-identical stderr --
+# which for a new traceback case means a permanent red line that looks like a
+# port bug. Count them instead of hoping.
+cli_audit() {
+  local n_recorded n_pending=0 n_traceback=0 n_divergent=0 name
+  n_recorded="$(find "$GOLDEN/cli" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+  [[ "${n_recorded:-0}" == "0" ]] && return 0
+  for name in $CLI_NEEDS_STAGES; do
+    [[ -d "$GOLDEN/cli/$name" ]] && n_pending=$((n_pending+1)) \
+      || bad "cli classification names a case with no golden: $name (pending)"
+  done
+  for name in $CLI_TRACEBACK; do
+    [[ -d "$GOLDEN/cli/$name" ]] && n_traceback=$((n_traceback+1)) \
+      || bad "cli classification names a case with no golden: $name (traceback)"
+  done
+  for name in $CLI_DIVERGENT; do
+    [[ -d "$GOLDEN/cli/$name" ]] && n_divergent=$((n_divergent+1))
+  done
+  local n_exact=$((n_recorded - n_pending - n_traceback - n_divergent))
+  info "classes: $n_exact exact, $n_traceback traceback, $n_pending pending, $n_divergent divergent = $n_recorded recorded"
+  # In verify mode, every recorded case must have produced exactly one verdict.
+  # Counting them is what caught cmd_cli being accidentally closed early by an
+  # edit that put its last case inside this function's body: the audit said 44
+  # recorded and only 43 verdicts had been emitted.
+  if [[ "$MODE" == "verify" ]]; then
+    local verdicts=$((PASS + FAIL + n_pending + n_divergent))
+    # PASS includes this function's own "every traceback golden" line, which has
+    # not been emitted yet at this point, so the expected total is n_recorded.
+    if [[ "$verdicts" -ne "$n_recorded" ]]; then
+      bad "only $verdicts of $n_recorded cases produced a verdict -- one was skipped silently"
+    fi
+  fi
+
+  # And the other direction: a recorded golden whose stderr IS a traceback but
+  # which is not in CLI_TRACEBACK. That is the failure mode this audit exists
+  # for -- it appears the moment someone adds a case that reproduces a crash.
+  local missed=()
+  for d in "$GOLDEN"/cli/*/; do
+    name="$(basename "$d")"
+    grep -q "^Traceback (most recent call last):" "$d/stderr" 2>/dev/null || continue
+    [[ "$CLI_TRACEBACK" == *" $name "* ]] && continue
+    missed+=("$name")
+  done
+  if [[ ${#missed[@]} -gt 0 ]]; then
+    bad "recorded golden is a Python traceback but is not in CLI_TRACEBACK: ${missed[*]}"
+    info "  add it there, or the port will be held to reproducing Python stack frames"
+  else
+    ok "every traceback golden is classified as one"
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------

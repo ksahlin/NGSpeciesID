@@ -158,6 +158,32 @@ three `write_fastq` cases all crash before `--N` is read (PORTING.md, Finding 6)
    `pipefail` that aborted `setup_reference_env.sh` silently, skipping medaka and the
    resolved-versions file.
 
+## The 44 CLI cases are three classes, not one
+
+| class | count | the port's obligation |
+| --- | --- | --- |
+| **exact** | 23 | byte-identical stdout, stderr and exit code. Checkable today, before any clustering exists |
+| **traceback** | 15 | same exit code, non-empty stderr, and **not** a stack trace (Python's or Rust's), in at most 6 lines |
+| **pending** | 6 | a valid invocation, so the reference runs the tool. Exactly matchable once the stages exist |
+
+The traceback class exists because fifteen goldens are reproduced crashes, and the information content
+of `KeyError: (0.08, 0.08)` plus eleven `File "...", line N` frames is "an exception happened". A port
+that printed that verbatim would be lying about its own implementation. It is a deliberate divergence
+with a note in PORTING.md — and it is asserted, not skipped: exit code, non-emptiness, and
+not-a-stack-trace can all fail.
+
+**Consequence for the self-check:** running `cli verify` against a "port" that *is* the reference now
+reports 23 green, 15 red and 6 pending, because the reference does not satisfy the port's contract for
+its own tracebacks. That is correct. Do not read those 15 as a regression.
+
+`cli_audit` runs last and checks the arithmetic both ways: that the three lists name only cases that
+exist, that they add up to the number of recorded goldens, that every case produced a verdict, and
+that no golden whose stderr *is* a traceback has been left out of the list. The last one is the
+important one — it fires the moment somebody adds a case that reproduces a crash. The
+verdict-counting check earned its place immediately: it caught `cmd_cli` being accidentally closed
+early by an edit that left its final case inside `cli_audit`'s own body, where it never ran. The run
+reported 43 verdicts against 44 recorded goldens and said so.
+
 ## Stage oracles
 
 End-to-end goldens say *that* the port is wrong, never *where* — and on the smoke corpus they cannot
