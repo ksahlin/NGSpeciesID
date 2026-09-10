@@ -3,13 +3,14 @@ NGSpeciesID
 
 NGSpeciesID is a tool for clustering and consensus forming of long-read amplicon sequencing data (has been used with both PacBio and Oxford Nanopore data). The repository is a modified version of [isONclust](https://github.com/ksahlin/isONclust), where consensus, primer-removal, and polishing feautures have been added.
 
-NGSpeciesID is distributed as a python package supported on Linux / OSX with python v3.6. [![Build Status](https://travis-ci.org/ksahlin/NGSpeciesID.svg?branch=master)](https://travis-ci.org/ksahlin/NGSpeciesID).
+NGSpeciesID is distributed as a python package supported on Linux and macOS (including Apple Silicon), with python 3.12.
 
 Table of Contents
 =================
 
   * [INSTALLATION](#installation)
     * [Using conda](#using-conda)
+    * [Reproducibility note for --sample_size](#reproducibility-note-for---sample_size)
     * [Testing installation](#testing-installation)
   * [USAGE](#usage)
     * [Filtering and subsampling](#filtering-and-subsampling)
@@ -24,54 +25,65 @@ Table of Contents
 INSTALLATION
 ----------------
 
-<!---
-**NOTE**: If you are experiencing issues (e.g. [this one](https://github.com/rvaser/spoa/issues/26)) with the third party tools  [spoa](https://github.com/rvaser/spoa) or [medaka](https://github.com/nanoporetech/medaka) in the installation instructions below, please install the tools manually with their respective installation instructions [here](https://github.com/rvaser/spoa#installation) and [here](https://github.com/nanoporetech/medaka#installation).  
--->
-
 ### Using conda
-
-**Recent update (2025-04-19)**
-
-There have been many version updates of medaka and spoa since NGSpeciesID was first published. Below are instructions to install 
-NGSpeciesID with newer versions of spoa ([v4.1.4](https://bioconda.github.io/recipes/spoa/README.html)) and medaka (v2.0.1).
-
-```
-conda create -n NGSpeciesID python=3.11 pip
-conda activate NGSpeciesID
-conda install --yes -c conda-forge -c bioconda medaka==2.0.1 openblas==0.3.3 spoa racon minimap2  samtools
-pip install NGSpeciesID
-```
-
-Make sure you [test the installation](#testing-installation).
-
-**Published installation instructions (2021-01-11)**
 
 Conda is the preferred way to install NGSpeciesID.
 
-1. Create and activate a new environment called NGSpeciesID
-
 ```
-conda create -n NGSpeciesID python=3.6 pip 
+conda create -n NGSpeciesID -c conda-forge -c bioconda python=3.12 pip medaka spoa racon minimap2 samtools
 conda activate NGSpeciesID
+pip install --no-deps NGSpeciesID
 ```
 
-2. Install NGSpeciesID 
+Then [test the installation](#testing-installation).
 
-```
-conda install --yes -c conda-forge -c bioconda medaka==0.11.5 openblas==0.3.3 spoa racon minimap2
-pip install NGSpeciesID
-```
-3. You should now have 'NGSpeciesID' installed; try it:
-```
-NGSpeciesID --help
-```
+Upon start/login to your server/computer you need to activate the conda environment "NGSpeciesID" to
+run NGSpeciesID as:
 
-Upon start/login to your server/computer you need to activate the conda environment "NGSpeciesID" to run NGSpeciesID as:
 ```
 conda activate NGSpeciesID
 ```
 
+#### Why the commands look like this
 
+Three details in the two lines above are deliberate, and getting any of them wrong is what makes the
+install fail.
+
+**`--no-deps` on the pip step.** NGSpeciesID needs two python libraries, `parasail` and `edlib`.
+The conda command above already installs both — `medaka` depends on `parasail-python` and
+`python-edlib`, and bioconda has prebuilt packages of each for linux-64, osx-64 and osx-arm64.
+Without `--no-deps`, pip reads this package's `install_requires` and reinstalls `parasail` **from
+PyPI, on top of the working conda build**. PyPI publishes no `parasail` wheel for any ARM platform,
+so on Apple Silicon (and on ARM Linux) pip falls back to compiling it from source, which fails after
+about two minutes with `RuntimeError: autoreconf -fi failed`. On x86_64 a PyPI wheel exists, the
+reinstall succeeds, and you never notice — which is why this went unreported for so long.
+
+**No version pins.** Earlier versions of these instructions pinned `medaka==2.0.1` (or `==0.11.5`)
+and `openblas==0.3.3`. Those pins resolve on linux-64 and on neither macOS platform: `medaka 2.0.1`
+has no macOS build at all, and conda-forge's earliest `openblas` for osx-arm64 is 0.3.11. Leave them
+unpinned.
+
+**`python=3.12`.** `medaka` 2.2.x requires it. It is also the interpreter to prefer for reproducible
+results: on python 3.11 and earlier, `sum()` over a set of floats is order-dependent, and repeated
+runs of NGSpeciesID on the same input can differ in the last digits of the reported read error rates.
+
+If you would rather not use `medaka` at all, install the libraries directly and use `--racon`:
+
+```
+conda create -n NGSpeciesID -c conda-forge -c bioconda python=3.12 pip parasail-python python-edlib spoa racon minimap2
+conda activate NGSpeciesID
+pip install --no-deps NGSpeciesID
+```
+
+### Reproducibility note for `--sample_size`
+
+`--sample_size` draws a **random** subset of reads and the draw is not seeded, so two runs of the
+same command produce different clusters and different consensus sequences. Add `--top_reads` to take
+the highest-quality reads instead of a random selection, which is reproducible:
+
+```
+NGSpeciesID --ont --sample_size 500 --top_reads --m 750 --s 50 --consensus --medaka --fastq [reads.fastq] --outfolder [/path/to/output]
+```
 
 ### Testing installation
 
@@ -97,6 +109,12 @@ curl -LO https://raw.githubusercontent.com/ksahlin/NGSpeciesID/master/test/sampl
 ```
 NGSpeciesID --ont --fastq sample_h1.fastq --outfolder ./sample_h1 --consensus --medaka
 ```
+
+On this input the run reports `Finished Clustering: 2 clusters formed` and
+`Finished Consensus creation: 1 created`, and takes about a minute — nearly all of it inside medaka.
+The polished sequence is `sample_h1/medaka_cl_id_17/consensus.fasta`, whose header records how many
+reads supported it. Substituting `--racon` for `--medaka` gives the same shape of output under
+`sample_h1/racon_cl_id_17/` in about three seconds.
 
 
 USAGE
@@ -126,6 +144,19 @@ NGSpeciesID --ont --sample_size 300 --m 750 --s 50 --consensus --medaka --fastq 
 ```
 
 By default, length filtering and subsampling are not invoked if parameters are not specified.
+
+`--sample_size` on its own takes a **random** subset, and the draw is not seeded — so the same
+command run twice gives different clusters and different consensus sequences. Add `--top_reads` to
+take the `--sample_size` highest-scoring reads instead, which is reproducible and is what you
+probably want:
+
+```
+NGSpeciesID --ont --sample_size 300 --top_reads --m 750 --s 50 --consensus --medaka --fastq [reads.fastq] --outfolder [/path/to/output]
+```
+
+Note also that `--abundance_ratio` (the `--consensus` cluster-size threshold, default 0.1) is applied
+to the **subsampled** read count, not to the whole file: with `--sample_size 300` it means "at least
+30 reads", not "at least 10% of the input".
 
 ### Removing primers
 
@@ -261,7 +292,10 @@ NGSpeciesID --ont --consensus --sample_size 500 --m 800 --s 100 --medaka --prime
 Here, the parameters are set as:
 - the data is from ONT MinION (`--ont`)
 - we want to generate consensus sequences (`--consensus`)
-- subsample of reads (`--sample_size`) = 500 reads subsampled per sample to analyze 
+- subsample of reads (`--sample_size`) = 500 reads subsampled per sample to analyze. This is a
+  **random**, unseeded draw, so rerunning the command gives a different answer; add
+  `--top_reads` if you need the run to be reproducible (see
+  [Filtering and subsampling](#filtering-and-subsampling))
 - intended target length (`--m`) = 800 base pairs
 - maximum deviation from target length (`--s`) = 100 base pairs
 - use [Medaka](https://github.com/nanoporetech/medaka) to polish the final consensus sequences (`--medaka`)

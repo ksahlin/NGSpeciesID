@@ -44,14 +44,12 @@ setup(
         # Pick your license as you wish
         #'License :: OSI Approved :: MIT License',
 
-        # Specify the Python versions you support here. In particular, ensure
-        # that you indicate whether you support Python 2, Python 3 or both.
-        #'Programming Language :: Python :: 2.7',
+        # Specify the Python versions you support here.
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
     ],
 
     keywords='viral sequeces ONT Oxford Nanopore Technologies long reads',  # Optional
@@ -67,15 +65,26 @@ setup(
     #
     packages=find_packages(exclude=['contrib', 'docs', 'tests']),  # Required
 
-    # If your package is for Python 2.7, and all versions of Python 3 starting with 3.4, write
-    python_requires='!=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, <4',
+    # The code uses f-strings throughout, so 3.6 is the floor on syntax alone.
+    # 3.10 is the floor in practice: it is the oldest interpreter for which
+    # bioconda still ships parasail-python and python-edlib builds. Reproducible
+    # results additionally want >=3.12 -- see the README.
+    python_requires='>=3.10, <4',
     # This field lists other packages that your project depends on to run.
     # Any package you put here will be installed by pip when your project is
     # installed, so they must be valid existing projects.
     #
     # For an analysis of "install_requires" vs pip's requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['parasail==1.2.4',
+    # parasail 1.2.4 is from 2018 and publishes no wheel for any ARM platform,
+    # so pinning it made `pip install NGSpeciesID` compile it from source on
+    # Apple Silicon and ARM Linux -- a build that fails with
+    # "RuntimeError: autoreconf -fi failed". 1.3.4 is no better on ARM (also no
+    # aarch64 wheel), so the README installs both libraries from bioconda
+    # (medaka pulls in parasail-python and python-edlib) and then runs
+    # `pip install --no-deps NGSpeciesID`. These bounds are what a bare
+    # `pip install` should ask for when it has to resolve them itself.
+    install_requires=['parasail>=1.3.4',
                       'edlib>=1.1.2'],  # Optional
     # dependency_links=[], # Optional
     # List additional groups of dependencies here (e.g. development
