@@ -138,13 +138,19 @@ The entry point must keep its exact current name, flags and defaults:
 
 Two branches, because the installation fixes should not wait for the port.
 
-| branch | base | contents | PR |
+| branch | base | contents | state |
 | --- | --- | --- | --- |
-| `fix/installation` | `master` | the three non-port fixes: working install instructions, the unpinned parasail, the `--q` guard, and the untracking of six junk files | **now** — small, self-contained, and it fixes a tool that is currently uninstallable on Apple Silicon |
-| `develop` | `master` | `PORTING.md`, `tools/repo-slim/`, `bench/`, and eventually `rust/` | **when the port is exact** |
+| `fix/installation` | `master` | working install instructions, the unpinned parasail, the `--q` guard, the untracking of six junk files | **merged**, PR #40 |
+| `fix/reproducible-sample-size` | `master` | `--seed` with a fixed default, and an ignore for the editable install's egg-info | **open** — rebased onto the post-#40 master |
+| `develop` | `master` | `PORTING.md`, `tools/repo-slim/`, `bench/`, and eventually `rust/` | PR **when the port is exact** |
 
-Burying the install fixes behind a long-lived port PR would waste them: they are useful this week and
-the port is not. `develop` gets `master` merged in after `fix/installation` lands.
+Splitting them was the right call and #40 shows why: it merged in a day, while the port branch has
+months to run. The `--seed` change is separate again because it **changes results** for existing
+`--sample_size` users, which is a different conversation from "the tool will not install".
+
+`develop` carries `master` and the `--seed` branch merged in, and it has to: the goldens must be
+recorded against the **fixed** reference or they pin behaviour that is about to change. When the
+`--seed` branch merges upstream, the merge into `develop` becomes a no-op.
 
 `origin/develop` exists and is **fully merged into `master`** — zero unique commits, and `master` is
 18 commits ahead of it. Unlike isONclust's, it holds nothing that would be lost, so re-creating it
@@ -1666,7 +1672,7 @@ want more.
 The author asked for branches and a PR rather than a working tree left uncommitted, so unlike the
 sibling ports this work is committed. See *Branches* for why there are two.
 
-### `fix/installation`, off `master` — pushed, ready for a PR
+### `fix/installation`, off `master` — **merged** as PR #40
 
 | sha | Message |
 | --- | --- |
@@ -1677,15 +1683,16 @@ sibling ports this work is committed. See *Branches* for why there are two.
 Every claim in `76d3f88`'s message is measured, including the per-subdir table and the end-to-end
 verification from a clean environment. `ea7c209` carries its no-op evidence (24 of 24 cases).
 
-### `fix/reproducible-sample-size`, off `fix/installation` — PR next
+### `fix/reproducible-sample-size`, off `master` — PR next
 
 | sha | Message |
 | --- | --- |
-| `04b252f` | `Make --sample_size reproducible with --seed` |
-| `56cb3c6` | `Ignore the egg-info an editable install leaves behind` |
+| `24a48a7` | `Make --sample_size reproducible with --seed` |
+| `4873365` | `Ignore the egg-info an editable install leaves behind` |
 
-Stacked on `fix/installation` rather than branched from `master`, because it edits the README section
-that branch introduced. Review it second, or with `--base fix/installation`.
+Written on top of `fix/installation` because it edits the README section that branch introduced, then
+**rebased onto `master`** once #40 merged, so it is now two commits against a clean base. Never
+pushed before the rebase, so nothing was force-updated.
 
 It is deliberately **not** part of `fix/installation`: that branch is "the tool cannot be installed",
 which is uncontroversial and should merge quickly, and this one **changes results** for existing
@@ -1703,14 +1710,8 @@ with it if so.
 | `c2dc638` | `bench/` | `bench: add the equivalence harness, corpora registry and goldens` |
 | `ff7530b` | `PORTING.md` | `Record what the harness measured, and three more findings` |
 | `e6a48ec` | `PORTING.md`, `bench/README.md` | `bench: the harness is green on both corpora against an exact port` |
-| `4d95af4` | — | `Merge branch 'fix/installation' into develop` |
-| `452ca7b` | — | `Merge branch 'fix/reproducible-sample-size' into develop` |
-
-The two merges are not tidiness. The goldens have to be recorded against the **fixed** reference or
-they pin behaviour that is about to change: the `--q` guard alters what `cli/q_filters_all` prints,
-`--seed` makes four new cases possible, and the version bump changes `cli/version` and every argparse
-usage block. So `develop` carries both branches ahead of `master`, and when they merge upstream the
-merge into `develop` is a no-op.
+| `684ee1d` | `bench/`, `PORTING.md` | `bench: invert the --sample_size gate, and cover --seed` |
+| plus merges | — | `master` (post-#40) and `fix/reproducible-sample-size` |
 
 `analyze.sh` has been run and its output — `removal-paths.txt`, `analysis.txt` — is committed;
 `archive_data.sh` and `slim.sh` have not been run. `rust/` lands here when it is written.
