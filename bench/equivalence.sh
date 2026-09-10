@@ -266,33 +266,32 @@ cmd_seeds() {
   cmd_seeds_sample_size
 }
 
-# --sample_size WITHOUT --top_reads is a known, unfixed defect: `random.sample`
-# on the unseeded global Mersenne Twister, with no --seed flag (PORTING.md,
-# Finding 1). Five runs of the identical command give five different answers.
+# --sample_size is seeded from --seed (default 0) since 0.3.2, so it belongs in
+# the case matrix like any other flag. This function is what is left of the gate
+# that used to assert the OPPOSITE, and it is kept rather than deleted because
+# the property it checks is easy to lose again: seeding is three lines in one
+# branch of one `elif`, and nothing else in the tool would notice if they went.
 #
-# This asserts that, rather than documenting it. Two reasons the assertion is
-# the right shape:
+# It checks three things:
 #
-#   1. It cannot be forgotten. A note in a markdown file can go stale; a check
-#      that runs in CI cannot.
-#   2. IT FAILS IF SOMEONE FIXES THE DEFECT without updating the harness -- at
-#      which point the right response is to add --sample_size cases to
-#      cases.tsv and delete this function. A harness that keeps passing after
-#      the world changed underneath it is the failure mode this whole exercise
-#      is built to avoid.
+#   1. the same command twice gives the same answer;
+#   2. a DIFFERENT --seed gives a different answer, so the flag is actually
+#      reaching the sampler rather than being parsed and ignored;
+#   3. --top_reads is reproducible and ignores --seed.
 #
-# PYTHONHASHSEED is FIXED here on purpose. Varying it would confound two
-# different sources of nondeterminism, and Finding 2's is interpreter-dependent
-# while this one is not.
+# (2) is the one worth having. A port that accepts --seed and then samples from
+# an unseeded generator passes (1) and (3) and fails only (2).
+#
+# PYTHONHASHSEED is FIXED here on purpose. Varying it would confound this with
+# Finding 2's interpreter-dependent defect, which is a different problem.
 cmd_seeds_sample_size() {
-  echo "==> known nondeterminism: --sample_size without --top_reads (Finding 1)"
+  echo "==> --sample_size is seeded (Finding 1, fixed in 0.3.2)"
   # The sample size has to be SMALLER than the number of reads that survive
   # filtering, or the subsample never happens: the guard is
   # `0 < args.sample_size < len(read_array)`, so --sample_size 500 on the
-  # 280-read smoke corpus silently takes every read and is perfectly
-  # reproducible. This check reported "the harness is stale" on its first run
-  # for exactly that reason -- a false alarm about a real defect, which is the
-  # worse kind. Derive the size from the corpus.
+  # 280-read smoke corpus silently takes every read. This check reported a false
+  # alarm on its first run for exactly that reason. Derive the size from the
+  # corpus.
   local nreads; nreads=$(( $(wc -l < "$CORPUS") / 4 ))
   local ss=$(( nreads / 2 ))
   if [[ "$ss" -lt 2 ]]; then
@@ -300,6 +299,7 @@ cmd_seeds_sample_size() {
     return 0
   fi
   info "corpus has $nreads reads; drawing --sample_size $ss"
+
   local i d hashes=() h
   for i in 1 2 3 4 5; do
     d="$WORK/ss_$i"
@@ -313,35 +313,48 @@ cmd_seeds_sample_size() {
     hashes+=("$(shasum -a 256 "$d/final_clusters.tsv" | cut -d' ' -f1)")
   done
   local distinct; distinct="$(printf '%s\n' "${hashes[@]}" | LC_ALL=C sort -u | wc -l | tr -d ' ')"
-  if [[ "$distinct" -gt 1 ]]; then
-    ok "confirmed NOT reproducible: 5 identical runs gave $distinct distinct results"
-    info "  This is expected and is why no --sample_size case is in cases.tsv."
-    info "  It blocks the port. See PORTING.md, Finding 1, for the four options."
+  if [[ "$distinct" == "1" ]]; then
+    ok "reproducible: 5 identical runs gave 1 result"
   else
-    bad "--sample_size now looks REPRODUCIBLE (5 runs, 1 result) -- the harness is stale"
-    info "  If a --seed was added, delete cmd_seeds_sample_size and add the cases"
-    info "  to bench/cases.tsv. If it is reproducible by accident, find out why"
-    info "  before trusting it: random.sample is still unseeded. First thing to"
-    info "  check is that $ss is genuinely less than the number of reads that"
-    info "  PASS FILTERING, which is smaller than the $nreads in the file."
+    bad "--sample_size is NOT reproducible: 5 identical runs gave $distinct results"
+    info "  This was Finding 1 and it was fixed in 0.3.2 by seeding random.sample"
+    info "  from --seed. If it is back, check that the elif branch in main() still"
+    info "  builds a random.Random(args.seed) rather than calling random.sample."
+    return 0
   fi
 
-  # --top_reads is the reproducible alternative, and that is worth pinning too:
-  # it is what the README now recommends, so a regression in it is a
-  # documentation bug as well as a code one.
+  # (2) A different seed must give a different subsample. Without this, a port
+  # that parses --seed and ignores it passes every other check here.
+  local other="$WORK/ss_seed7"
+  rm -rf "$other"; mkdir -p "$other"
+  PYTHONHASHSEED=0 "$REF_PYTHON" NGSpeciesID --ont --t 1 --sample_size "$ss" --seed 7 \
+    --fastq "$CORPUS" --outfolder "$other" >/dev/null 2>&1 || true
+  h="$(shasum -a 256 "$other/final_clusters.tsv" 2>/dev/null | cut -d' ' -f1)"
+  if [[ -z "$h" ]]; then
+    bad "--seed 7 produced no output"
+  elif [[ "$h" == "${hashes[0]}" ]]; then
+    bad "--seed 7 gives the SAME result as --seed 0 -- the flag is being ignored"
+  else
+    ok "--seed 7 gives a different subsample from the default --seed 0"
+  fi
+
+  # (3) --top_reads is the deterministic-by-construction path and must ignore
+  # --seed. It is what the README recommends for "the best reads" rather than
+  # "a reproducible random subset", so a regression here is a documentation bug
+  # as well as a code one.
   local first="" tdiff=0
   for i in 1 2 3; do
     d="$WORK/tr_$i"
     rm -rf "$d"; mkdir -p "$d"
     PYTHONHASHSEED=0 "$REF_PYTHON" NGSpeciesID --ont --t 1 --sample_size "$ss" --top_reads \
-      --fastq "$CORPUS" --outfolder "$d" >/dev/null 2>&1 || true
+      --seed "$i" --fastq "$CORPUS" --outfolder "$d" >/dev/null 2>&1 || true
     h="$(shasum -a 256 "$d/final_clusters.tsv" 2>/dev/null | cut -d' ' -f1)"
     [[ -z "$h" ]] && { bad "--top_reads produced no output"; return 0; }
     [[ -z "$first" ]] && first="$h" && continue
     [[ "$h" == "$first" ]] || tdiff=1
   done
-  [[ $tdiff -eq 0 ]] && ok "--top_reads is reproducible across 3 runs" \
-                     || bad "--top_reads is NOT reproducible -- the README recommends it"
+  [[ $tdiff -eq 0 ]] && ok "--top_reads is reproducible and ignores --seed (3 seeds, 1 result)" \
+                     || bad "--top_reads varies with --seed -- it should not use the sampler at all"
   return 0
 }
 

@@ -187,7 +187,7 @@ that wrote it.
 | reference runs on real data | **done** | 3 000 reads → 49 clusters at `--t 1`, 33 at `--t 8`, in 1.6 s / 0.7 s |
 | determinism gate | **done, and it fails twice** | *Finding 1* (`--sample_size`) and *Finding 2* (Python ≤3.11) |
 | interpreter decision | **taken: pin ≥3.12** | same decision as isONclust, same reason. The README recommending 3.11 is *Finding 2* |
-| `--sample_size` decision | **not taken. This is the one blocking question in the document** | *Finding 1* |
+| `--sample_size` decision | **taken: `--seed`, fixed default 0** | *Finding 1*. Commit `04b252f`; verified a no-op on 24 of 24 cases and reproducible through the consensus stage. **The port's one blocker is gone** |
 | CLI contract captured | **done, 44 cases recorded** | `bench/golden/<corpus>/cli/` — exit code, stdout and stderr, scrubbed of paths, timings and traceback line numbers. *The exit-code contract* |
 | output goldens recorded | **done, 51 cases on both corpora** | `bench/golden/<corpus>/manifest.tsv`. Includes every `--consensus` case, both polishers, and the `--t > 1` merge intermediates |
 | goldens are reproducible | **done** | `equivalence.sh stable` records the whole matrix twice and diffs: 191 checks, identical. It found two real defects on the way — *Finding 23* and *Finding 24* |
@@ -198,7 +198,7 @@ that wrote it.
 | repository slimmed | **not started; analysed, and the tooling is in the tree and runs** | `tools/repo-slim/analyze.sh` reports 520.1 MB of 530.8 MB strippable (98.0%), 15 paths, and writes a reviewed `removal-paths.txt`. *Repo hygiene* |
 | clustering engine | **already exists and is verified against this reference** | 12 configurations × 2 corpora, `--t` 1/4/8. *Goal* |
 | `--symmetric_map_align_thresholds` | not started | new logic; visible on the 3 000-read corpus (85 clusters vs 49) and **invisible** on `sample_h1` |
-| `--m`/`--s`/`--sample_size`/`--top_reads` | not started | blocked on *Finding 1* for the random path only; `--top_reads` and `--m`/`--s` are reproducible today |
+| `--m`/`--s`/`--sample_size`/`--top_reads` | not started, and no longer blocked | all four are reproducible now. `--sample_size` needs `pyrandom.rs` — MT19937 plus `random.sample`'s two branches, both of which the two corpora exercise. *Finding 1* |
 | POA (`spoa`) | not started, **de-risked** | the invocation is byte-for-byte isONcorrect's, where `spoars` was measured identical on 505/505 cases. *spoa* |
 | reverse-complement detection | not started | needs `parasail_alignment` at `opening_penalty=3` — a second call site with different defaults from the clustering path. The port already has parasail |
 | primer / universal-tail trimming | not started | needs edlib **HW** mode with `task="locations"` and `additionalEqualities`. Different from the NW/CIGAR path isONcorrect reimplemented. *The aligners* |
@@ -332,10 +332,11 @@ Processes are spawned with `mp.set_start_method('spawn')`, so workers do not inh
 
 ### Ported — inside the equivalence contract
 
-All 38 live flags. Clustering: `--fastq`, `--outfolder`, `--version`, `-h`/`--help`, `--debug`, `--k`,
+All 39 live flags. Clustering: `--fastq`, `--outfolder`, `--version`, `-h`/`--help`, `--debug`, `--k`,
 `--w`, `--q`, `--t`, `--d`, `--ont`, `--isoseq`, `--min_shared`, `--mapped_threshold`,
 `--aligned_threshold`, `--symmetric_map_align_thresholds`, `--min_fraction`, `--min_prob_no_hits`,
-`--batch_type`, `--use_old_sorted_file`, `--m`, `--s`, `--sample_size`, `--top_reads`. Consensus:
+`--batch_type`, `--use_old_sorted_file`, `--m`, `--s`, `--sample_size`, `--top_reads`, `--seed`.
+Consensus:
 `--consensus`, `--abundance_ratio`, `--rc_identity_threshold`, `--max_seqs_for_consensus`, `--medaka`,
 `--racon`, `--medaka_model`, `--medaka_fastq`, `--racon_iter`, `--remove_universal_tails`,
 `--primer_file`, `--primer_max_ed`, `--trim_window`. Plus the `write_fastq` subcommand with
@@ -346,8 +347,8 @@ equivalence case, because a preset silently resolving to the wrong numbers is in
 that agrees for other reasons. Both are applied **after** explicit `--k`/`--w`, so `--ont --w 5`
 silently becomes `--w 20` — measured, and contract.
 
-**`--sample_size` without `--top_reads` cannot be inside a byte-identity contract as it stands.**
-See *Finding 1*.
+`--sample_size` **is** inside the contract now, since 0.3.2 seeds it from `--seed` — see
+*Finding 1* for the four cases that cover it and for what reproducing `random.sample` costs the port.
 
 ### Nothing is dropped
 
@@ -451,7 +452,15 @@ and it is a better fallback here than there, because it is one file and no CMake
 The default code path is deterministic **on Python ≥3.12 only, and only without `--sample_size`**.
 Read *Finding 1* and *Finding 2* before this list.
 
-- **`--sample_size` without `--top_reads` is not reproducible at all.** *Finding 1*.
+- **`--sample_size` is seeded from `--seed`, and the port must reproduce CPython's generator.**
+  MT19937 seeded by `init_by_array`, `getrandbits(k)` as one 32-bit word shifted right by `32 - k`,
+  `_randbelow` by rejection sampling on `n.bit_length()` bits, and `random.sample`'s two branches
+  selected by `setsize = 21 + 4**ceil(log(k*3, 4))`. `smoke` takes the pool branch and `sup` the
+  selection-set branch, so both are covered. *Finding 1*.
+- **The sample is `sorted()` after being drawn**, so the subsample preserves score order and the
+  draw's own order never reaches output. That does not make the draw's order irrelevant — *which*
+  indices come out depends on it — but it does mean the port need not match the order they come out
+  in, only the set.
 - **`sum()` over floats is compensated from CPython 3.12 and a naive left-fold before it.** The sites
   that matter sum over `set(qual)` and `set(qualcomp)`, whose iteration order is
   `PYTHONHASHSEED`-dependent. The port must reproduce the **exactly rounded** sum (Neumaier or
@@ -509,7 +518,7 @@ Where it stands, measured:
 | `cli record` | **44 cases** |
 | `record` | **51 cases**, both corpora |
 | `stable` | **191 checks, identical across two recordings** |
-| `verify` against a "port" that IS the reference | **51 of 51 output cases and 37 of 37 checkable CLI cases green, on BOTH corpora.** The other 7 CLI cases are `pending` — valid invocations that need the clustering stages to exist |
+| `verify` against a "port" that IS the reference | **55 of 55 output cases and 37 of 37 checkable CLI cases green, on BOTH corpora.** The other 7 CLI cases are `pending` — valid invocations that need the clustering stages to exist |
 
 **What counts as a difference.** Every file the tool writes, byte for byte:
 
@@ -543,15 +552,22 @@ built — each a shell wrapper around the reference — and run against the smok
 
 | the "port" | cases failed of 51 |
 | --- | --- |
-| the reference itself, unmodified | **0** — and 0 on the 3 000-read corpus too |
+| the reference itself, unmodified | **0 of 55**, on both corpora |
 | the reference with `--min_shared` 5 → 6 | 15 |
 | one digit changed in one `error_rate` field of one file | 48 |
 | the reference plus one extra output file | 51 |
 | the reference minus `logfile.txt` | 48 |
+| **a port that accepts `--seed` and strips it** | **1 — `sample100_s7`, and nothing else** |
 
 `--min_shared 6` catching only 15 of 51 is a measurement about the **corpus**, not the harness: on
 280 short reads most cases never reach a shared-minimizer count where 5 and 6 differ. Same conclusion
 as *Finding 19*.
+
+The last row is the sharpest of the five, and it was added after 0.3.2. A port that implements
+`--seed` as a parsed-and-discarded argument is reproducible, agrees with the reference on every other
+case, and is wrong. It fails `sample100_s7` and **only** `sample100_s7` — 54 of 55 pass — which is
+exactly what one well-chosen case is supposed to do, and it is why that case exists rather than
+relying on `seeds` alone.
 
 Those five runs found **four real defects**, three of them in the harness and one in the reference:
 
@@ -657,10 +673,15 @@ Two collisions are intended on both and must stay: `default` == `k13w20` pins th
 `ont` == `k13w20` pins that the preset resolves to `--k 13 --w 20`. What the small corpus hides is
 *Finding 19*, and it includes the flag this port has to write from scratch.
 
-The matrix still needs extending in three directions that were not swept: `--t` at 2/4/8 (measured
-separately — 42/35/33 clusters), all three `--batch_type` values, and every `--consensus` case. It
-also needs `--q 8` and `--q 9`, which discriminate cleanly (31 and 14 clusters), rather than `--q 15`,
-which crashes.
+The recorded matrix in `bench/cases.tsv` extends that sweep to **55 cases**: `--t` at 1/2/4/8 (which
+gives 49/42/35/33 clusters), all three `--batch_type` values, every `--consensus` combination across
+both polishers, the primer and universal-tail paths, `--q 8`/`--q 9` in place of the `--q 15` that
+crashes, and — since 0.3.2 made them meaningful — four `--sample_size` cases.
+
+Those four are at sizes 100 and 200 rather than 500, because the guard is
+`0 < sample_size < len(read_array)` and a size at or above the surviving read count silently takes
+every read: 500 does that on the 280-read smoke corpus, and a case that collapses onto `default` is
+not a test. `top_huge` keeps that no-op path covered on purpose.
 
 ### The corpora
 
@@ -732,52 +753,79 @@ passed every oracle and was caught only by diffing a dump taken from the running
 
 Ordered by how much they matter to the port.
 
-### Finding 1 — `--sample_size` is not reproducible, and the README recommends it
+### Finding 1 — `--sample_size` was not reproducible. **Fixed in 0.3.2 with `--seed`.**
 
-`main` subsamples with
+`main` subsampled with
 
 ```python
 read_array = [read_array[i] for i in sorted(random.sample(range(len(read_array)), args.sample_size))]
 ```
 
-`random` is never seeded, there is no `--seed` flag, and CPython seeds the global Mersenne Twister
-from OS entropy at import. So the draw is different every run.
+`random` was never seeded, there was no `--seed` flag, and CPython seeds the global Mersenne Twister
+from OS entropy at import. So the draw was different every run.
 
 Measured on `Supplementary_File1_reads.fastq` with `--sample_size 500 --t 1` at a **fixed**
-`PYTHONHASHSEED=0`, five runs of the same command:
+`PYTHONHASHSEED=0`, five runs of the same command: five different answers
+(`256de88f…`, `b6f6f7db…`, `0b6f0425…`, `1e9f091b…`, `82a33afd…`). Not a corner case — the README's
+worked example, the protocol manuscript it describes, and `test/consensus.sh` all use
+`--sample_size`.
 
-| run | `final_clusters.tsv` + `final_cluster_origins.tsv` sha256 (first 16) |
+**Resolved: `--seed`, `type=int`, default 0, feeding a local `random.Random(args.seed)`.** Option (a)
+of the four that were written up. Commit `04b252f`, and the version goes to 0.3.2 because it changes
+results for existing `--sample_size` users — from "a different answer every time" to "the same answer
+every time", so there is no previous answer it could have preserved.
+
+What was verified before it landed:
+
+| check | result |
 | --- | --- |
-| 1 | `256de88f62b817f7` |
-| 2 | `b6f6f7dbd7982da5` |
-| 3 | `0b6f042529f2a1ea` |
-| 4 | `1e9f091b0c86f252` |
-| 5 | `82a33afd4c91af33` |
+| 5 identical runs, `PYTHONHASHSEED=random` | **1 result** |
+| `--seed` 0 / 1 / 2 / 42 | 19 / 17 / 21 / 18 clusters — four different subsamples |
+| `--seed 0` vs no `--seed` | byte-identical |
+| the whole 24-case matrix, before vs after | **24 of 24 byte-identical** — a no-op for anything that does not subsample |
+| `--top_reads` | still takes the highest-scoring reads, ignores `--seed` |
+| `--sample_size 500 --consensus --racon`, 3 runs | identical `final_clusters.tsv` **and** identical polished `consensus.fasta` |
 
-Five runs, five different answers. With `--top_reads` added, three runs gave one answer.
+A local `Random` instance rather than `random.seed()`, so nothing else in the process is affected.
+The draw is identical either way — checked: `Random(0).sample(...)` equals `random.seed(0)` followed
+by `random.sample(...)`, since both seed the same generator.
 
-This is not a corner. The README's own worked example is
-`NGSpeciesID --ont --consensus --sample_size 500 --m 800 --s 100 --medaka --primer_file primers.txt`,
-`test/consensus.sh` ships that command in a loop over every fastq in a directory, and the protocol
-manuscript the README describes is built around it. **The tool's recommended invocation cannot
-reproduce its own results**, and every consensus sequence downstream of it inherits that.
+#### What this now obliges the port to do
 
-**This is the one decision the port cannot take on its own.** Four options, with what each costs:
+The port has to reproduce **CPython's Mersenne Twister and `random.sample`'s selection algorithm
+exactly**. That is a new requirement — before, no implementation could have matched — and it is
+tractable and well specified, in the same class as the `pyfloat.rs` and `pyround.rs` the isONclust
+port already needed. Call it `pyrandom.rs`.
 
-| option | byte-identity | user impact |
+Three pieces, all from CPython's `random.py` and `_randommodule.c`:
+
+1. **MT19937**, seeded by `init_by_array` on the key derived from the integer seed. CPython takes the
+   seed's **absolute value** and splits it into 32-bit words, so `--seed -5` and `--seed 5` give the
+   *same* subsample — checked, and worth knowing before someone treats the sign as a second axis.
+2. **`getrandbits(k)`** for `k <= 32`: one 32-bit word, shifted right by `32 - k`.
+3. **`_randbelow_with_getrandbits(n)`**: rejection sampling on `n.bit_length()` bits, and
+   **`sample`'s two branches**, chosen by `setsize = 21 + 4**ceil(log(k*3, 4))` for `k > 5`:
+   the *pool* branch when `n <= setsize` (a partial Fisher–Yates over a copy) and the *selection set*
+   branch otherwise (draw-and-retry against a set of already-chosen indices).
+
+**Both branches are exercised by the two committed corpora**, which is luck worth banking. At the
+matrix's `--sample_size` 100 and 200, `setsize` is 1045, and the surviving read counts are 274 on
+`smoke` and 3 000 on `sup`:
+
+| corpus | surviving reads | branch |
 | --- | --- | --- |
-| **(a)** add `--seed` to the Python, defaulting to a fixed value | achievable, goldens recorded once | changes today's output for every `--sample_size` user, and makes it reproducible. Recommended |
-| **(b)** add `--seed` defaulting to entropy, i.e. opt-in reproducibility | achievable only with `--seed` set | no change to existing behaviour; nobody who does not read the changelog benefits |
-| **(c)** reproduce Mersenne Twister and `random.sample` exactly in Rust, and add `--seed` | achievable | faithful, and a genuine amount of work for a defect |
-| **(d)** exclude the random path from the contract; port `--top_reads` only | not achievable for that flag | leaves the recommended invocation unverifiable |
+| `smoke` | 274 | **pool** |
+| `sup` | 3 000 | **selection set** |
 
-(a) is recommended, it is a fix to the *Python* under method point 8, it is one commit, and it is a
-blocker: goldens for any `--sample_size` case are meaningless until it lands. Note that (a) and (c)
-are not exclusive — (c) is what makes (a)'s goldens portable across implementations, and it can come
-later.
+So a port that implements only one of the two fails on one corpus and passes on the other. Four cases
+now cover this in `bench/cases.tsv` — `sample100`, `sample100_s7`, `sample200`, `cons_sample100` —
+plus `top_huge`, which keeps the "size exceeds the read count, so no subsample happens" no-op path
+covered deliberately.
 
-Note also that `--top_reads` and `--m`/`--s` are reproducible today and can be ported and verified
-immediately. Only the random draw is blocked.
+One thing deliberately **not** added: a sentinel meaning "use OS entropy", which would restore
+today's behaviour of a fresh draw each run. It was never an intentional feature, and adding it would
+put an unreproducible path back into a tool that has just stopped having one. `--seed -1` is
+available if it is ever wanted.
 
 ### Finding 2 — the reference does not agree with itself on Python ≤3.11, and the README recommends 3.11
 
@@ -1421,7 +1469,7 @@ measurement. Ordered by how much they matter.
 
 | # | Fix | Effect |
 | --- | --- | --- |
-| *Finding 1* | `--seed`, defaulting to a fixed value | makes the recommended invocation reproducible. **This one is a blocker, not a deferral** — it has to be decided before goldens for any `--sample_size` case mean anything |
+| ~~*Finding 1*~~ | ~~`--seed`, defaulting to a fixed value~~ | **Done**, `04b252f`. Was the port's only blocker |
 | *Finding 7* | take isONclust's guard for the empty-`error_rates` crash | turns a traceback into an explanation, same exit code. Nearly free; verify a no-op on every case that does not reach it |
 | *Finding 6* | `split("\t", 1)` in `write_fastq`, and move the required-input group off the top-level parser | makes a dead feature work on ONT data |
 | *Finding 4* | treat `--consensus` with no polisher as draft-only; reject a polisher with no `--consensus` | removes a crash after all the expensive work, and a silent no-op |
@@ -1471,9 +1519,9 @@ Carried over from the isONcorrect, isONform and isONclust ports. The full versio
 measurements behind each point, are in those repositories' `PORTING.md`.
 
 1. **CLI parity first**, locked by unit tests. Argument names, defaults, validation order, message
-   text and exit codes. Twenty multi-word flags need explicit `long = "..."`; eight are double-dash
-   single-letter; five of those carry a `dest` that differs from the flag; argparse prefix
-   abbreviation is live.
+   text and exit codes. **39 flags** as of 0.3.2. Twenty multi-word ones need explicit
+   `long = "..."`; eight are double-dash single-letter; five of those carry a `dest` that differs
+   from the flag; argparse prefix abbreviation is live in all three of its behaviours.
 2. **Differential oracles, not end-to-end tests.** Wrap the reference without modifying it; dump each
    stage's inputs *and* outputs in a stable line format; replay pure functions from Rust and diff
    stateful ones. End-to-end equivalence tells you *that* something is wrong, never *where*.
@@ -1518,6 +1566,14 @@ measurements behind each point, are in those repositories' `PORTING.md`.
   comparing two programs that were meant to differ and calling it a failure. Corollary earned in the
   isONclust port: **a harness that has never failed has not been tested, it has only been run.**
   Deliberately break the port and confirm the harness notices.
+* **`pip install -e .` does not make `scripts=` live.** setuptools *copies* the entry point into
+  the environment's `bin`, so `$ENVDIR/bin/NGSpeciesID` is a snapshot taken at install time and goes
+  stale the moment the reference is edited. Testing `--seed` by hand through the PATH binary ran the
+  pre-change copy, which gave three different consensus sequences in three runs and looked exactly
+  like a bug in the new code — a false finding that took a diagnosis to unwind. The harness was never
+  affected, because `equivalence.sh` always invokes `$REF_PYTHON NGSpeciesID` by repo-relative path.
+  `setup_reference_env.sh` now replaces the copy with a symlink. Generalisation: **when a measurement
+  surprises you, first check that you measured the thing you think you measured.**
 * **Do not edit a script while it is running.** bash reads a script incrementally, from a byte
   offset, so editing `bench/equivalence.sh` during a 20-minute recording made the running shell
   resume inside changed text: it died with `line 1140: d: unbound variable` and left a manifest that
@@ -1570,10 +1626,10 @@ want more.
 2. ~~Take isONclust's *Finding 7* fix.~~ **Done**, `ea7c209`, verified a no-op on 24 of 24 cases.
 3. ~~Untrack the six junk files in `HEAD`.~~ **Done**, `555f3e3`, before any history rewrite so the
    two are separately reviewable.
-4. **Answer *Finding 1*.** Still the only question in this document that a human has to settle, and
-   nothing that touches `--sample_size` can be recorded until it is. Recommended: add `--seed` with a
-   fixed default. The README now warns about it and points at `--top_reads`, which buys time but is
-   not the fix.
+4. ~~Answer *Finding 1*.~~ **Done: `--seed`, fixed default 0** (`04b252f`). It was the only question
+   in this document that a human had to settle, and it is settled. The harness assertion that used to
+   prove the nondeterminism now proves the opposite, including that a different `--seed` actually
+   changes the subsample — a port that parses `--seed` and ignores it fails that one and nothing else.
 5. **Slim the repository.** 520.1 MB of 530.8 MB, 98.0%. Carry `tools/repo-slim/` across from
    isONclust, build the removal list from a tree walk (*Finding 21*), check the four tags, and check
    whether the archive already exists from the isONclust exercise before taking it again. Ends in a
@@ -1610,7 +1666,7 @@ want more.
 The author asked for branches and a PR rather than a working tree left uncommitted, so unlike the
 sibling ports this work is committed. See *Branches* for why there are two.
 
-### `fix/installation`, off `master` — ready for a PR now
+### `fix/installation`, off `master` — pushed, ready for a PR
 
 | sha | Message |
 | --- | --- |
@@ -1619,11 +1675,24 @@ sibling ports this work is committed. See *Branches* for why there are two.
 | `555f3e3` | `Untrack committed bytecode and OS metadata` |
 
 Every claim in `76d3f88`'s message is measured, including the per-subdir table and the end-to-end
-verification from a clean environment. `ea7c209` carries its no-op evidence (24 of 24 cases). None of
-the three depends on the port, and all three fix something a user hits today.
+verification from a clean environment. `ea7c209` carries its no-op evidence (24 of 24 cases).
 
-**Not in this branch, deliberately:** `--seed` (*Finding 1*), which is a user-visible behaviour change
-and needs the author's decision, and the history rewrite, which is a force-push.
+### `fix/reproducible-sample-size`, off `fix/installation` — PR next
+
+| sha | Message |
+| --- | --- |
+| `04b252f` | `Make --sample_size reproducible with --seed` |
+| `56cb3c6` | `Ignore the egg-info an editable install leaves behind` |
+
+Stacked on `fix/installation` rather than branched from `master`, because it edits the README section
+that branch introduced. Review it second, or with `--base fix/installation`.
+
+It is deliberately **not** part of `fix/installation`: that branch is "the tool cannot be installed",
+which is uncontroversial and should merge quickly, and this one **changes results** for existing
+`--sample_size` users. Mixing them risks the install fix stalling behind a discussion about
+reproducibility. The version bump to 0.3.2 is in its own hunk so it can be dropped if you would
+rather bump at release time — the README sentence that names 0.3.2 as the boundary needs updating
+with it if so.
 
 ### `develop`, off `master` — PR when the port is exact
 
@@ -1631,22 +1700,26 @@ and needs the author's decision, and the history rewrite, which is a force-push.
 | --- | --- | --- |
 | `981e1d3` | `PORTING.md` | `Add the Rust port plan, reconnaissance and findings` |
 | `0b047c0` | `tools/repo-slim/` | `tools: add the staged history-rewrite tooling` |
-| — | `bench/` | `bench: add the equivalence harness, corpora registry and goldens` |
+| `c2dc638` | `bench/` | `bench: add the equivalence harness, corpora registry and goldens` |
+| `ff7530b` | `PORTING.md` | `Record what the harness measured, and three more findings` |
+| `e6a48ec` | `PORTING.md`, `bench/README.md` | `bench: the harness is green on both corpora against an exact port` |
+| `4d95af4` | — | `Merge branch 'fix/installation' into develop` |
+| `452ca7b` | — | `Merge branch 'fix/reproducible-sample-size' into develop` |
+
+The two merges are not tidiness. The goldens have to be recorded against the **fixed** reference or
+they pin behaviour that is about to change: the `--q` guard alters what `cli/q_filters_all` prints,
+`--seed` makes four new cases possible, and the version bump changes `cli/version` and every argparse
+usage block. So `develop` carries both branches ahead of `master`, and when they merge upstream the
+merge into `develop` is a no-op.
 
 `analyze.sh` has been run and its output — `removal-paths.txt`, `analysis.txt` — is committed;
 `archive_data.sh` and `slim.sh` have not been run. `rust/` lands here when it is written.
-
-`develop` should get `master` merged in once `fix/installation` lands, so the port is developed
-against the fixed reference rather than the broken one. That matters for more than tidiness: the
-`--q` guard changes what `--q 12` prints, and `cli/q_filters_all` is a recorded golden — so the
-goldens in `bench/golden/` were deliberately recorded **with** the guard applied, and re-recording
-after the merge should be a no-op. Check that it is.
 
 ## What is next, concretely
 
 The reconnaissance is finished and so is the harness. Everything from here is Rust, in this order:
 
-1. **`rust/` skeleton and the CLI.** 38 flags, 20 needing explicit `long`, 8 double-dash
+1. **`rust/` skeleton and the CLI.** 39 flags, 20 needing explicit `long`, 8 double-dash
    single-letter, 5 with a `dest` that differs from the flag, argparse prefix matching in all three
    of its behaviours, and the `write_fastq` subcommand behind a required top-level group. Locked by
    the 44 recorded CLI cases — `equivalence.sh cli verify` is the whole acceptance test, and 37 of
@@ -1654,7 +1727,10 @@ The reconnaissance is finished and so is the harness. Everything from here is Ru
 2. **Bring the isONclust engine across.** Measured to reproduce this reference at 12 configurations;
    re-verify against the full 51-case matrix. Delete `readfq`'s `replace(" ", "_")`. Restrict the
    probability table to `k >= 10`.
-3. **`--m`/`--s`, `--top_reads`**, then `--sample_size` once *Finding 1* is settled.
+3. **`--m`/`--s` and `--top_reads`**, which are straightforward, then **`--sample_size`**, which
+   needs `pyrandom.rs`: MT19937 seeded by `init_by_array`, `getrandbits`, `_randbelow`, and
+   `random.sample`'s two branches. `smoke` exercises the pool branch and `sup` the selection-set one,
+   so a port that implements only one fails on exactly one corpus. *Finding 1* has the details.
 4. **`--symmetric_map_align_thresholds`**, with `stage parasail` as its oracle — the dump already
    carries the second alignment ratio the flag reads — verified on `sup`, where it is visible.
 5. **The consensus stage**, in dependency order, each against the oracle that already exists for it:

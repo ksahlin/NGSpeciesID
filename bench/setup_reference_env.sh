@@ -80,6 +80,24 @@ echo "    FROM PyPI over the working conda build -- which on any ARM machine"
 echo "    means a source build, and that build fails."
 "$ENVDIR/bin/pip" install -q --no-deps -e "$ROOT"
 
+# `pip install -e .` does NOT make setup.py's `scripts=` entry live: it COPIES
+# the file into $ENVDIR/bin, so $ENVDIR/bin/NGSpeciesID is a snapshot taken at
+# install time and silently goes stale the moment the reference is edited.
+#
+# This is not a hypothetical. Testing --seed by hand through the PATH binary
+# ran the pre-change copy, which produced three different consensus sequences
+# in three runs and looked exactly like a bug in the new code. Replace the copy
+# with a symlink so the PATH binary is the file in the working tree.
+#
+# The harness itself is not affected -- equivalence.sh always invokes
+# `$REF_PYTHON NGSpeciesID` by repo-relative path -- but anything typed at a
+# prompt is.
+if [[ -f "$ENVDIR/bin/NGSpeciesID" && ! -L "$ENVDIR/bin/NGSpeciesID" ]]; then
+  echo "==> replacing the copied entry point with a symlink to the working tree"
+  echo "    (pip copies scripts= even for an editable install, so the copy goes stale)"
+  ln -sf "$ROOT/NGSpeciesID" "$ENVDIR/bin/NGSpeciesID"
+fi
+
 echo "==> verifying"
 "$ENVDIR/bin/python" - <<'PY'
 import sys

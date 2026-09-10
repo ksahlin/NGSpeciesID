@@ -32,15 +32,34 @@ CORPUS=smoke GOLDEN=$PWD/bench/golden/smoke bench/equivalence.sh record
 | file | role |
 | --- | --- |
 | `equivalence.sh` | the harness. Every subcommand above |
-| `cases.tsv` | 51 output cases. TAB-separated; see the warning at the top of the file |
+| `cases.tsv` | 55 output cases. TAB-separated; see the warning at the top of the file |
 | `corpora.tsv` | the corpus registry. Both entries are committed |
 | `setup_reference_env.sh` | builds the reference environment. One conda line — see below |
 | `dump_reference.py` | wraps the reference's own functions to dump a stage's inputs *and* outputs, for stages whose output never reaches a file |
 | `diffsummary.py` | says which **column** moved and by how much. A line diff is useless on these files: `final_cluster_origins.tsv` carries the full read sequence and quality string in columns 3 and 4, so one wrong float in column 6 prints four kilobytes |
 | `golden/<corpus>/manifest.tsv` | per-file sha256 for every case, plus the provenance the goldens are only valid under |
 | `golden/<corpus>/cli/<case>/` | `exit`, `stdout`, `stderr` for 44 CLI cases |
+| `env/resolved-*.txt` | what the reference environment actually resolved to |
 | `golden/<corpus>/sample/` | the `default` case's output as **heads**, so there is something to read by eye without running anything. Heads and not whole files: `final_clusters.tsv` is one line per read, each carrying a whole ONT accession, which is 686 KB on the 3 000-read corpus. The hashes in `manifest.tsv` are the contract; this directory is a courtesy |
 | `env/resolved-*.txt` | what the reference environment actually resolved to |
+
+## `--sample_size` is seeded, and `seeds` checks three things about that
+
+Since 0.3.2 the subsample is drawn from `--seed` (default 0). `equivalence.sh seeds` used to assert
+the *opposite* — that the draw was unreproducible — and would have failed the moment it was fixed,
+which was the point. It now checks:
+
+1. the same command twice gives the same answer;
+2. a **different** `--seed` gives a different answer;
+3. `--top_reads` is reproducible and ignores `--seed`.
+
+(2) is the one worth having. A port that accepts `--seed` and then samples from an unseeded generator
+passes (1) and (3) and fails only (2).
+
+The sample size is derived from the corpus, at half its read count. It has to be **smaller** than the
+number of reads that survive filtering or the subsample never happens — the guard is
+`0 < sample_size < len(read_array)` — and this check reported a false alarm on its first run because
+a hardcoded 500 exceeded the 280-read smoke corpus.
 
 ## The reference environment is one conda line
 
@@ -55,6 +74,13 @@ isONclust's equivalent script is three times longer, and almost all of it is the
 bioconda ships `parasail-python` and `python-edlib` prebuilt for `osx-arm64`, and `medaka` depends on
 both. `--no-deps` on the pip step is what stops pip reinstalling parasail from PyPI over the working
 conda build — see PORTING.md, *Goal*.
+
+**One trap the script now works around.** `pip install -e .` does *not* make setup.py's `scripts=`
+entry live — setuptools copies the file into the environment's `bin`, so `$ENVDIR/bin/NGSpeciesID` is
+a snapshot that goes stale as soon as the reference is edited. Testing `--seed` by hand through the
+PATH binary ran the pre-change copy and looked exactly like a bug in the new code. The script
+replaces the copy with a symlink. The harness itself was never affected: it always invokes
+`$REF_PYTHON NGSpeciesID` by repo-relative path.
 
 ## The goldens are hashes, not files
 
@@ -89,11 +115,12 @@ each a shell wrapper around the reference, and run against the smoke goldens:
 
 | the "port" | cases failed of 51 |
 | --- | --- |
-| the reference itself | **0** — and 0 on `sup` as well |
+| the reference itself | **0 of 55** — and 0 on `sup` as well |
 | the reference with `--min_shared` 5 → 6 | 15 |
 | one digit changed in one `error_rate` field | 48 |
 | the reference plus one extra output file | 51 |
 | the reference minus `logfile.txt` | 48 |
+| **a port that accepts `--seed` and strips it** | **1 — `sample100_s7`, and nothing else** |
 
 `--min_shared 6` catching only 15 of 51 is itself a measurement, and it is about the corpus rather
 than the harness: on 280 short reads most cases do not reach a shared-minimizer count where 5 and 6
