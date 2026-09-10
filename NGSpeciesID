@@ -60,7 +60,15 @@ def main(args):
     if args.top_reads:
         read_array = read_array[:args.sample_size]
     elif 0 < args.sample_size < len(read_array):
-        read_array = [read_array[i] for i in sorted(random.sample(range(len(read_array)), args.sample_size))]
+        # Seeded from --seed, so the same command gives the same answer. Before
+        # this, `random.sample` drew from the unseeded global Mersenne Twister,
+        # which CPython seeds from OS entropy at import: five runs of the same
+        # command gave five different clusterings and five different consensus
+        # sequences. A local Random instance rather than random.seed() so that
+        # nothing else in the process is affected; the draw is identical either
+        # way, since both seed the same generator.
+        sampler = random.Random(args.seed)
+        read_array = [read_array[i] for i in sorted(sampler.sample(range(len(read_array)), args.sample_size))]
 
     abundance_cutoff = int( args.abundance_ratio * len(read_array))
     #################################################################
@@ -186,7 +194,7 @@ def write_fastq(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Reference-free clustering and consensus forming of targeted ONT or PacBio reads", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--version', action='version', version='%(prog)s 0.3.1')
+    parser.add_argument('--version', action='version', version='%(prog)s 0.3.2')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     reads_file = parser.add_mutually_exclusive_group(required=True)
     reads_file.add_argument('--fastq', type=str, help='Path to consensus fastq file(s)')
@@ -220,6 +228,7 @@ if __name__ == '__main__':
     parser.add_argument('--s', dest="target_deviation", type=int, default=0, help='Maximum allowed amplicon-length deviation.  Invoked to filter out reads with length greater than m + s or smaller than m - s (default = 0 which means no filtering)')
     parser.add_argument('--sample_size', type=int, default=0, help='Use sample_size reads in the NGSpecies pipeline (default = 0 which means all reads considered). If sample size is larger than actual number of reads, all reads will be used.')
     parser.add_argument('--top_reads', action='store_true', help='Use the top --sample_size reads instead of a random selection (default = false, which means random reads considered). ')
+    parser.add_argument('--seed', type=int, default=0, help='Random seed for the --sample_size subsample, which is the only randomness in the tool. Fixed by default so runs are reproducible; change it to draw a different subsample.')
 
 
     parser.add_argument('--k', type=int, default=13, help='Kmer size')
