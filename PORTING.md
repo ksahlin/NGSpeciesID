@@ -171,7 +171,7 @@ The history rewrite is on neither branch. It is a force-push, it is reviewed on 
 | `modules/barcode_trimmer.py` | Reference: edlib HW-mode primer and universal-tail location and trimming, with an IUPAC equivalence map. **New; isONclust has no equivalent** |
 | `modules/help_functions.py` | Reference: `readfq`, `cigar_to_seq`, `mkdir_p`. Note `readfq` here does **not** substitute spaces in accessions |
 | `modules/p_minimizers_shared.py` | Reference: a 1.79 MB Python literal — 41 880 rows of empirical minimizer-sharing probabilities, `k` 10–30, `w` 10–100. Data, not code. Identical to isONclust's `k >= 10` subset |
-| `rust/` | The port. Does not exist yet — this is where the next session starts |
+| `rust/` | The port. **The CLI exists**: `cli.rs` (a hand-written argparse-compatible parser, no clap), `text.rs` plus `src/text/*.txt` (the fixed strings, extracted from the goldens rather than typed), `main.rs`, `tests/cli_goldens.rs`. Everything past validation exits 70 |
 | `bench/` | The equivalence harness, carried across from `isONclust/bench/` and adapted. `equivalence.sh`, `cases.tsv` (51 cases), `corpora.tsv`, `dump_reference.py` (6 stages), `diffsummary.py`, `setup_reference_env.sh`, `golden/{smoke,sup}/`, and its own `README.md`. **Runs; goldens recorded on both corpora** |
 | `tools/repo-slim/` | The staged history-rewrite tooling, carried across from `isONclust/tools/repo-slim/` and adapted. `analyze.sh` has been **run**; `archive_data.sh` and `slim.sh` have not. See *Repo hygiene* |
 | `test/sample_h1.fastq` | 280 ONT reads, 390 KB. The README's install check and the `.travis.yml` fixture. **Blind to five parameters** — *Finding 19* |
@@ -198,6 +198,7 @@ that wrote it.
 | output goldens recorded | **done, 51 cases on both corpora** | `bench/golden/<corpus>/manifest.tsv`. Includes every `--consensus` case, both polishers, and the `--t > 1` merge intermediates |
 | goldens are reproducible | **done** | `equivalence.sh stable` records the whole matrix twice and diffs: 191 checks, identical. It found two real defects on the way — *Finding 23* and *Finding 24* |
 | the harness itself is tested | **done** | five deliberately-broken "ports" run against the goldens; see *Has the harness got teeth?* |
+| **CLI parity** | **done for the 23 exact cases, on both corpora** | `equivalence.sh cli verify`: **32 of 39 checkable** — all 23 exact byte-identical, plus 8 of the 15 traceback cases. 48 unit and integration tests, `clippy -D warnings` and `cargo fmt` clean. The 7 remaining traceback cases need runtime stages and fail loudly on the exit code |
 | stage oracles | **written and exercised on both corpora; the replay half waits for the port** | `bench/dump_reference.py` covers six stages, three of them new here. *Finding 25* has the coverage counts |
 | corpora | **done, 2 committed, both measured for discriminating power** | *The corpora*, *Finding 19* |
 | case matrix swept on both corpora | **done** | 24 cases; `Supplementary_File1_reads.fastq` gives 19 distinct results and 1 unintended collision, `sample_h1.fastq` gives 12 and 8 |
@@ -1720,11 +1721,16 @@ with it if so.
 
 The reconnaissance is finished and so is the harness. Everything from here is Rust, in this order:
 
-1. **`rust/` skeleton and the CLI.** 39 flags, 20 needing explicit `long`, 8 double-dash
-   single-letter, 5 with a `dest` that differs from the flag, argparse prefix matching in all three
-   of its behaviours, and the `write_fastq` subcommand behind a required top-level group. Locked by
-   the 44 recorded CLI cases — `equivalence.sh cli verify` is the whole acceptance test, and 37 of
-   the 44 are checkable before any clustering exists.
+1. ~~`rust/` skeleton and the CLI.~~ **Done**, `a6be3f3`. Hand-written rather than clap, for the five
+   reasons in `rust/src/cli.rs`'s module docs. 32 of the 39 checkable cases green on both corpora —
+   all 23 exact ones byte-identical — with the other 7 waiting on runtime stages.
+
+   Two bugs there are worth carrying forward as method, because the **goldens caught them and the
+   unit tests did not**: a pre-pass looking for the subcommand claimed `5` in `--min 5` and reported
+   `invalid choice: '5'` instead of the ambiguity, and the top-level required-group check ran before
+   the subparser so `write_fastq --help` reported a missing `--fastq`. Both unit-test suites were
+   green throughout, because they tested `resolve` and not `parse`. **Test the thing the golden
+   tests.**
 2. **Bring the isONclust engine across.** Measured to reproduce this reference at 12 configurations;
    re-verify against the full 51-case matrix. Delete `readfq`'s `replace(" ", "_")`. Restrict the
    probability table to `k >= 10`.
