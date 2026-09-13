@@ -1,0 +1,385 @@
+//! The driver: the stages of `NGSpeciesID`'s `main()`, in its order.
+//!
+//! The reference's `main` is four steps, and this mirrors them one for one:
+//!
+//! 1. sort every read by expected error-free k-mers (`get_sorted_fastq_for_cluster`)
+//! 2. filter by length and subsample (`--m`/`--s`, `--sample_size`/`--top_reads`)
+//! 3. load the empirical probability table and cluster
+//! 4. write the output, and optionally form consensus sequences
+//!
+//! **Only step 1 exists so far.** The rest returns `Incomplete`, which `main`
+//! turns into exit 70 — deliberately not one of the reference's own codes, so a
+//! stage that is missing cannot be mistaken for a stage that agrees.
+//!
+//! WHAT IS PRINTED, AND WHERE
+//! --------------------------
+//! Everything the reference emits goes through `logging` with
+//! `format='%(message)s'`, so it lands on **stderr** with no prefix, and at the
+//! default INFO level a whole successful run prints exactly two lines:
+//!
+//! ```text
+//! Starting Clustering: 274 reads
+//! Finished Clustering: 3 clusters formed
+//! ```
+//!
+//! The sorting stage prints nothing at all — its messages are all
+//! `logging.debug`. That is why this module does not port them: at INFO level
+//! they are not observable, and `--debug` output is not in the byte-identity
+//! contract because it carries timings and the entire probability table.
+//!
+//! The two exceptions, both of which ARE shown at INFO level and both of which
+//! are in the goldens:
+//!
+//! * `logging.warning` when `--use_old_sorted_file` reuses an existing file;
+//! * the `logging.error` pair when `--q` filters every read.
+
+use crate::cli::Args;
+use crate::{fastq, pyfloat, sorting};
+use std::path::{Path, PathBuf};
+
+/// How far the pipeline got.
+pub enum Outcome {
+    /// Ran to completion. Nothing constructs this yet -- the last stage is not
+    /// written -- but `main` already maps it to exit 0, so the day it is
+    /// constructed nothing else has to change.
+    #[allow(dead_code)]
+    Done,
+    /// A stage that is not written yet. `main` maps this to exit 70.
+    Incomplete(&'static str),
+    /// The reference fails here too, with this exit code. The message has
+    /// already been written to stderr.
+    Failed(i32),
+}
+
+/// The files the reference writes into `--outfolder`, by the names it uses.
+pub struct Paths {
+    pub sorted: PathBuf,
+    pub logfile: PathBuf,
+}
+
+impl Paths {
+    pub fn in_outfolder(outfolder: &str) -> Self {
+        let d = Path::new(outfolder);
+        Paths {
+            sorted: d.join("sorted.fastq"),
+            logfile: d.join("logfile.txt"),
+        }
+    }
+}
+
+pub fn run(args: &Args) -> Outcome {
+    let outfolder = args
+        .outfolder
+        .as_deref()
+        .expect("cli::validate rejects a missing --outfolder");
+    let paths = Paths::in_outfolder(outfolder);
+
+    match sort_stage(args, &paths) {
+        Err(code) => return Outcome::Failed(code),
+        Ok(_n) => {}
+    }
+
+    Outcome::Incomplete("clustering")
+}
+
+/// Step 1: `get_sorted_fastq_for_cluster.main`.
+///
+/// Returns the number of reads that passed the quality filter, or the exit code
+/// to fail with.
+///
+/// TWO ORDERING FACTS FROM THE REFERENCE, both observable:
+///
+/// * `logfile.txt` is opened for **writing** before the branch that decides
+///   whether to write anything to it. So `--use_old_sorted_file` truncates it
+///   to zero bytes even though the clustering is unchanged — PORTING.md,
+///   *Finding 13*. Reproduced.
+/// * `sorted.fastq` is likewise opened for writing before the code that fills
+///   it, so a run that fails leaves an **empty** one behind, and a second run
+///   with `--use_old_sorted_file` then "succeeds" on zero reads — *Finding 23*.
+///   Reproduced, because a pipeline that retries after a failure has to see the
+///   same thing it sees today.
+fn sort_stage(args: &Args, paths: &Paths) -> Result<usize, i32> {
+    // Truncate the logfile first, exactly as the reference's
+    // `open(..., 'w')` does, and before anything can return early.
+    if let Err(e) = std::fs::write(&paths.logfile, b"") {
+        eprintln!("Error: cannot write {}: {e}", paths.logfile.display());
+        return Err(1);
+    }
+
+    if paths.sorted.is_file() && args.use_old_sorted_file {
+        // logging.warning, so it IS shown at the default level.
+        eprintln!(
+            "Using already existing sorted file in specified directory, in not intended, specify different outfolder or delete the current file."
+        );
+        return Ok(count_records(&paths.sorted));
+    }
+
+    let Some(input) = args.fastq.as_deref() else {
+        // `--use_old_sorted_file` with no sorted.fastq to reuse. The reference
+        // reaches `for i, (...) in enumerate(read_array)` with read_array
+        // unbound and dies with UnboundLocalError. Finding 23's first half.
+        //
+        // Note it has ALREADY created an empty sorted.fastq by this point --
+        // the reference opens it unconditionally further down -- which is what
+        // makes the retry exit 0. Reproduce that, since a pipeline that retries
+        // must see what it sees today.
+        let _ = std::fs::write(&paths.sorted, b"");
+        eprintln!(
+            "Error: --use_old_sorted_file was given but {} does not exist.",
+            paths.sorted.display()
+        );
+        return Err(1);
+    };
+
+    sort_from_fastq(args, paths, input)
+}
+
+/// Score, filter and sort, then write `sorted.fastq` and `logfile.txt`.
+///
+/// Two streaming passes, carrying 24 bytes per read rather than its bases:
+/// pass one scores every record and notes where it sits in the input and how
+/// long its output line will be; the vector is sorted, which fixes every
+/// surviving record's byte offset in the output; pass two streams the input
+/// again and writes each record straight to its place. Carried across from the
+/// isONclust port, where holding `acc`/`seq`/`qual` for every read was the
+/// largest allocation in the whole program.
+fn sort_from_fastq(args: &Args, paths: &Paths, input: &str) -> Result<usize, i32> {
+    let k = args.k as usize;
+
+    struct SortRec {
+        score: f64,
+        error_rate: f64,
+        ordinal: u32,
+        out_len: u32,
+    }
+    let mut recs: Vec<SortRec> = Vec::new();
+    // Finding 12: a record with no quality -- which is what a fastq with no
+    // trailing newline produces -- makes the reference die with
+    // `TypeError: 'NoneType' object is not iterable`. Keep the first and report
+    // it, rather than a stack trace.
+    let mut no_qual: Option<String> = None;
+    let mut ordinal: u32 = 0;
+    if let Err(e) = fastq::for_each_file(Path::new(input), |r| {
+        let this = ordinal;
+        ordinal += 1;
+        if r.qual.is_none() && no_qual.is_none() {
+            no_qual = Some(r.name.clone());
+        }
+        if let Some(sc) = sorting::score_record(&r, k, args.quality_threshold) {
+            let qual = r.qual.as_deref().unwrap_or("");
+            recs.push(SortRec {
+                score: sc.score,
+                error_rate: sc.error_rate,
+                ordinal: this,
+                out_len: sorting::sorted_fastq_record_len(&r.name, sc.score, &r.seq, qual) as u32,
+            });
+        }
+    }) {
+        eprintln!("Error: cannot read {input}: {e}");
+        return Err(1);
+    }
+    if let Some(name) = no_qual {
+        eprintln!("Error: read '{name}' has no quality values.");
+        eprintln!("The usual cause is a fastq with no trailing newline on its last line.");
+        return Err(1);
+    }
+
+    let nr_scored = recs.len();
+    sorting::sort_by_score(&mut recs, |r| r.score);
+
+    let mut place: Vec<u64> = vec![u64::MAX; ordinal as usize];
+    let mut total: u64 = 0;
+    for r in &recs {
+        place[r.ordinal as usize] = total;
+        total += u64::from(r.out_len);
+    }
+    // The score is needed again in pass two to rebuild the header, and
+    // recomputing it would mean a second compensated sum over the quality.
+    let mut score_of_ordinal: Vec<f64> = vec![0.0; ordinal as usize];
+    for r in &recs {
+        score_of_ordinal[r.ordinal as usize] = r.score;
+    }
+    let mut rates: Vec<f64> = recs.iter().map(|r| r.error_rate).collect();
+    drop(recs);
+
+    {
+        use std::os::unix::fs::FileExt;
+        let f = match std::fs::File::create(&paths.sorted) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Error: cannot write {}: {e}", paths.sorted.display());
+                return Err(1);
+            }
+        };
+        if let Err(e) = f.set_len(total) {
+            eprintln!("Error: cannot write {}: {e}", paths.sorted.display());
+            return Err(1);
+        }
+        let mut ordinal: u32 = 0;
+        let mut failed: Option<std::io::Error> = None;
+        if let Err(e) = fastq::for_each_file(Path::new(input), |r| {
+            let this = ordinal as usize;
+            ordinal += 1;
+            let at = place[this];
+            if at == u64::MAX || failed.is_some() {
+                return;
+            }
+            let line = sorting::sorted_fastq_record(
+                &r.name,
+                score_of_ordinal[this],
+                &r.seq,
+                r.qual.as_deref().unwrap_or(""),
+            );
+            if let Err(e) = f.write_all_at(line.as_bytes(), at) {
+                failed = Some(e);
+            }
+        }) {
+            eprintln!("Error: cannot re-read {input}: {e}");
+            return Err(1);
+        }
+        if let Some(e) = failed {
+            eprintln!("Error: cannot write {}: {e}", paths.sorted.display());
+            return Err(1);
+        }
+    }
+
+    // The reference reports this through logging.DEBUG, so at the default level
+    // it prints nothing. Not ported: it is unobservable unless --debug, and
+    // --debug output is not in the contract.
+
+    match sorting::logfile_contents(&mut rates) {
+        Some(contents) => {
+            if let Err(e) = std::fs::write(&paths.logfile, contents) {
+                eprintln!("Error: cannot write {}: {e}", paths.logfile.display());
+                return Err(1);
+            }
+        }
+        None => {
+            // The guard added to the Python on master (Finding 7). Both lines
+            // go through logging.error, so both are shown at any level, and
+            // both are in cli/q_filters_all.
+            let q = pyfloat::repr(args.quality_threshold);
+            let msg = format!("No reads passed the quality filter (--q {q}).\n");
+            let _ = std::fs::write(&paths.logfile, &msg);
+            eprintln!("Error: no reads passed the quality filter (--q {q}).");
+            eprintln!("Lower --q, or check that the input has quality values.");
+            return Err(1);
+        }
+    }
+    Ok(nr_scored)
+}
+
+/// How many records a fastq holds. Only needed on the `--use_old_sorted_file`
+/// path, where the reference re-reads the file it decided not to write.
+fn count_records(p: &Path) -> usize {
+    let mut n = 0usize;
+    let _ = fastq::for_each_file(p, |_| n += 1);
+    n
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::Args;
+
+    fn tmp(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ngsid_pipeline_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).expect("tmpdir");
+        d
+    }
+
+    fn args_for(dir: &Path, fastq_path: Option<&Path>) -> Args {
+        Args {
+            fastq: fastq_path.map(|p| p.to_string_lossy().into_owned()),
+            outfolder: Some(dir.to_string_lossy().into_owned()),
+            ..Default::default()
+        }
+    }
+
+    // Both reads must survive the default filter, which is
+    // `len(seq) >= 2*k` AND `len(homopolymer_compressed) >= k`, with k=13. The
+    // second condition is the one that bites: TTTTGGGG... compresses to eight
+    // bases and is dropped. These alternate enough to keep 32 after compression.
+    const TWO_READS: &str =
+        "@r1 x y\nACGTACGTACGTACGTACGTACGTACGTACGT\n+\nIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\n\
+@r2 x y\nTGCATGCATGCATGCATGCATGCATGCATGCA\n+\nHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH\n";
+
+    #[test]
+    fn the_logfile_is_truncated_before_anything_else() {
+        // Finding 13: --use_old_sorted_file leaves logfile.txt at zero bytes,
+        // because it is opened for writing before the branch that skips the
+        // work. The clustering is unchanged; the log is destroyed.
+        let d = tmp("truncate");
+        let paths = Paths::in_outfolder(&d.to_string_lossy());
+        std::fs::write(&paths.logfile, b"previous run's statistics\n").unwrap();
+        std::fs::write(&paths.sorted, TWO_READS).unwrap();
+        let mut a = args_for(&d, None);
+        a.use_old_sorted_file = true;
+        let n = sort_stage(&a, &paths).expect("reuses the existing file");
+        assert_eq!(n, 2);
+        assert_eq!(
+            std::fs::read(&paths.logfile).unwrap().len(),
+            0,
+            "logfile must be truncated to zero bytes"
+        );
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn a_failed_use_old_run_leaves_an_empty_sorted_fastq() {
+        // Finding 23. The first run fails; the second, identical, run then
+        // takes the "use the existing sorted file" path and succeeds on zero
+        // reads. A pipeline that retries after a failure sees exactly this.
+        let d = tmp("poison");
+        let paths = Paths::in_outfolder(&d.to_string_lossy());
+        let mut a = args_for(&d, None);
+        a.use_old_sorted_file = true;
+
+        assert_eq!(sort_stage(&a, &paths), Err(1), "first run fails");
+        assert!(paths.sorted.is_file(), "and leaves sorted.fastq behind");
+        assert_eq!(std::fs::read(&paths.sorted).unwrap().len(), 0, "empty");
+
+        let n = sort_stage(&a, &paths).expect("the retry 'succeeds'");
+        assert_eq!(n, 0, "on zero reads");
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn accessions_keep_their_spaces_through_the_sort() {
+        // The one behaviour that differs from isONclust, checked end to end
+        // rather than only in fastq.rs: the header goes into sorted.fastq with
+        // its spaces intact and the score appended after an underscore.
+        let d = tmp("spaces");
+        let input = d.join("in.fastq");
+        std::fs::write(&input, TWO_READS).unwrap();
+        let paths = Paths::in_outfolder(&d.to_string_lossy());
+        let a = args_for(&d, Some(&input));
+        let n = sort_stage(&a, &paths).expect("sorts");
+        assert_eq!(n, 2);
+        let out = std::fs::read_to_string(&paths.sorted).unwrap();
+        let first = out.lines().next().unwrap();
+        assert!(first.starts_with("@r"), "{first}");
+        assert!(
+            first.contains(" x y_"),
+            "spaces kept, score appended: {first}"
+        );
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn filtering_everything_out_writes_the_guard_and_fails() {
+        // Finding 7, as fixed on master: a line in the logfile, two on stderr,
+        // exit 1.
+        let d = tmp("qall");
+        let input = d.join("in.fastq");
+        std::fs::write(&input, TWO_READS).unwrap();
+        let paths = Paths::in_outfolder(&d.to_string_lossy());
+        let mut a = args_for(&d, Some(&input));
+        a.quality_threshold = 99.0;
+        assert_eq!(sort_stage(&a, &paths), Err(1));
+        let log = std::fs::read_to_string(&paths.logfile).unwrap();
+        assert_eq!(log, "No reads passed the quality filter (--q 99.0).\n");
+        std::fs::remove_dir_all(&d).ok();
+    }
+}

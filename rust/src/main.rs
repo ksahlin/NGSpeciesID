@@ -12,6 +12,12 @@
 //! cases all want exit 1.
 
 mod cli;
+mod fastq;
+mod phred;
+mod pipeline;
+mod pyfloat;
+mod pyround;
+mod sorting;
 mod text;
 
 use std::io::Write;
@@ -67,7 +73,11 @@ fn main() -> ExitCode {
                 eprintln!("Error: could not create --outfolder {outfolder}: {e}");
                 return ExitCode::from(1);
             }
-            not_implemented("clustering")
+            match pipeline::run(&args) {
+                pipeline::Outcome::Done => ExitCode::SUCCESS,
+                pipeline::Outcome::Failed(code) => ExitCode::from(code as u8),
+                pipeline::Outcome::Incomplete(stage) => not_implemented(stage),
+            }
         }
         cli::Outcome::WriteFastq(wf) => {
             // Reading the payload here keeps it honest: the fields are the ones
