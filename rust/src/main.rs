@@ -11,13 +11,23 @@
 //! reason — `bench/equivalence.sh` compares exit codes, and the 15 traceback
 //! cases all want exit 1.
 
+mod align;
+mod blockalign;
 mod cli;
+mod cluster;
 mod fastq;
+mod minimizers;
+mod p_emp;
+mod packed;
+mod parasail;
+#[cfg(feature = "parasail-ffi")]
+mod parasail_ffi;
 mod phred;
 mod pipeline;
 mod pyfloat;
 mod pyround;
 mod sorting;
+mod sweep;
 mod text;
 
 use std::io::Write;
@@ -26,7 +36,7 @@ use std::process::ExitCode;
 /// Not 0, 1 or 2. See the module docs: a placeholder must not be mistakable for
 /// the reference's own exit codes. 70 is `EX_SOFTWARE` from sysexits.h, which
 /// is as close to "this program is incomplete" as the convention gets.
-const EXIT_NOT_IMPLEMENTED: u8 = 70;
+pub const EXIT_NOT_IMPLEMENTED: u8 = 70;
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();

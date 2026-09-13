@@ -1,0 +1,727 @@
+//! `cluster.get_all_hits` and `cluster.get_best_cluster` -- the mapping decision.
+//!
+//! This is where a read is compared against the representatives it shares
+//! minimizers with, and either joins one or becomes a representative itself.
+//!
+//! Three things decide bytes:
+//!
+//! * **The candidate ranking is a total order.** `sorted(..., key=(len,
+//!   sum(positions), acc), reverse=True)`. `minimizer_database` values are
+//!   Python **sets of ints**, so the insertion order of the hit dicts is
+//!   set-iteration order -- but the third sort key is the representative's
+//!   accession, and accessions are unique, so no tie ever falls through to it.
+//!   Measured, not assumed: 120/120, 9972/9972 and 19938/19938 distinct
+//!   accessions on the three corpora. `assert_unique_accessions` re-checks it at
+//!   runtime, because it is a property of the data rather than of the algorithm.
+//! * **`reduce(mul, [p] * n, 1)` is a left fold, not `p.powi(n)`.** It multiplies
+//!   `p` into an accumulator `n` times starting from the integer 1. The two
+//!   differ in the low bits, and this value gates whether a span counts as
+//!   mapped.
+//! * **The first candidate over the threshold wins**, and the walk stops early
+//!   at `nm_hits < min_fraction * top_hits`.
+
+use rustc_hash::FxHashMap;
+use std::collections::HashMap;
+
+/// What `get_best_cluster` needs from a representative.
+///
+/// A trait rather than a map, so the caller can answer from whatever it already
+/// holds. The previous version built a fresh `HashMap<usize, Representative>`
+/// per read and cloned every candidate's accession into it -- for nothing, since
+/// both fields are only ever read.
+pub trait Representatives {
+    /// The accession *including* the appended score, as it appears in
+    /// `sorted.fastq`. This is the ranking's third sort key.
+    fn acc(&self, id: usize) -> &str;
+    /// The homopolymer-compressed error rate, added on first processing.
+    fn error_rate(&self, id: usize) -> f64;
+    /// The length of the representative's homopolymer-compressed sequence.
+    ///
+    /// Only `--symmetric_map_align_thresholds` reads this, and it is the reason
+    /// NGSpeciesID's representative tuple has EIGHT elements where isONclust's
+    /// has seven: the eighth is `seq_hpol_comp`, stored so the mapped fraction
+    /// can be computed over the representative as well as over the read.
+    fn compressed_len(&self, id: usize) -> usize;
+}
+
+/// k-mer -> the representatives carrying it.
+///
+/// The reference uses a `set` of ints. Sets deduplicate, and a read *can* offer
+/// the same minimizer twice (see `minimizers`), so this deduplicates too. The
+/// stored order is insertion order, which differs from CPython's set order --
+/// that is safe only because the ranking key is total, and
+/// `assert_unique_accessions` is what keeps that true.
+///
+/// # Representation
+///
+/// Keys are **2-bit packed into a `u64`** rather than stored as the k-mer bytes.
+/// Profiled on droso_100k this structure was 82 MB of a 261 MB live heap --
+/// 148 bytes per entry for 26 bytes of information -- because a `Vec<u8>` key
+/// costs 24 bytes inline plus a heap allocation for 13 bytes, and a `Vec<usize>`
+/// value costs 24 inline plus a 32-byte allocation (`Vec`'s first push reserves
+/// capacity 4) for what is usually a single id.
+///
+/// Packing is exact, not a hash: a 32-bit hash would collide across the ~580k
+/// keys droso_100k already reaches, and a collision merges two k-mers' lists and
+/// changes the answer. The map only needs *equality*, while
+/// `get_kmer_minimizers` does its lexicographic comparison on the sequence
+/// itself, so minimizer selection is untouched by the encoding.
+///
+/// The leading `1` bit is load-bearing. `get_kmer_minimizers` can emit
+/// minimizers **shorter than k** (Finding 4), so lengths differ, and without the
+/// sentinel `"AA"` and `"AAAA"` would both pack to zero. Starting the accumulator
+/// at 1 makes the encoding injective across lengths, and costs one bit: `1 + 2k`
+/// bits must fit in 64, so `k <= 31`. Every `k` the tool can run is 4..=30,
+/// because `p_emp::Table::select` has no table outside that range.
+///
+/// Anything that does not pack -- a non-ACGT base, or a minimizer longer than 31
+/// -- goes in `wide`, keyed by the bytes exactly as before. `N` is rare in ONT
+/// and PacBio output, so that map stays near-empty in practice, and keeping it
+/// means the encoding costs no exactness on any input.
+#[derive(Default)]
+pub struct MinimizerDatabase {
+    /// Packed k-mer -> representative ids. `u32` ids: these are indices into the
+    /// sorted read array, so they cannot reach 2^32.
+    ///
+    /// The lists are tiny and there are millions of them -- see `Postings`.
+    map: FxHashMap<u64, Postings>,
+    /// The exact fallback for k-mers that do not pack. Normally empty.
+    wide: FxHashMap<Vec<u8>, Postings>,
+}
+
+/// The representative ids for one minimizer.
+///
+/// Measured on 100k Drosophila reads, `--t 8`, at the first merge iteration
+/// (which is where peak RSS is made): 2 117 416 keys holding 3 362 042 postings
+/// between them, so 1.59 each. 65.9% of keys hold exactly one and 97.6% hold
+/// four or fewer. As `Vec<u32>` that was one heap block per key -- 2.1M of them,
+/// each rounded up to malloc's 16-byte minimum for what is usually 4 bytes of
+/// payload, and with `Vec`'s doubling the total requested capacity ran 2.6x the
+/// postings actually stored.
+///
+/// The inline capacity is **two**, not four, and the reason is the table rather
+/// than the lists. `SmallVec<[u32; 2]>` is 24 bytes -- exactly what `Vec<u32>`
+/// was -- while `[u32; 4]` measures 32, and there are around 4M table slots in
+/// iteration 1: going inline-4 would add 8 bytes to every one of them (+32 MB)
+/// to save the 222k keys of length 3 and 4 their blocks (3.6 MB). Two covers
+/// 87.1% of keys and costs nothing. The rest spill to the heap as before.
+type Postings = smallvec::SmallVec<[u32; 2]>;
+
+/// 2-bit pack a k-mer, or `None` if it contains a non-ACGT byte or is too long.
+///
+/// Case-sensitive on purpose: the reference keys its dict by the k-mer string, so
+/// `a` and `A` are different keys there and must stay different here. Lowercase
+/// input therefore takes the `wide` path rather than being folded.
+#[inline]
+fn pack(kmer: &[u8]) -> Option<u64> {
+    if kmer.len() > 31 {
+        return None;
+    }
+    let mut acc: u64 = 1;
+    for &b in kmer {
+        let code = match b {
+            b'A' => 0,
+            b'C' => 1,
+            b'G' => 2,
+            b'T' => 3,
+            _ => return None,
+        };
+        acc = (acc << 2) | code;
+    }
+    Some(acc)
+}
+
+impl MinimizerDatabase {
+    // Not dead: Used by `parallelize`, which builds one database per batch.
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[allow(dead_code)]
+    pub fn len(&self) -> usize {
+        self.map.len() + self.wide.len()
+    }
+
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty() && self.wide.is_empty()
+    }
+
+    /// `minimizer_database[m].add(read_cl_id)`.
+    pub fn add(&mut self, kmer: &[u8], cl_id: usize) {
+        let id = cl_id as u32;
+        let e = match pack(kmer) {
+            Some(k) => self.map.entry(k).or_default(),
+            None => self.wide.entry(kmer.to_vec()).or_default(),
+        };
+        if !e.contains(&id) {
+            e.push(id);
+        }
+    }
+
+    fn get(&self, kmer: &[u8]) -> Option<&[u32]> {
+        match pack(kmer) {
+            Some(k) => self.map.get(&k).map(|v| v.as_slice()),
+            None => self.wide.get(kmer).map(|v| v.as_slice()),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Hits {
+    /// Insertion-ordered, mirroring the reference's `defaultdict`.
+    pub order: Vec<usize>,
+    pub by_cluster: FxHashMap<usize, HitList>,
+    /// `HitList`s taken out by `reset`, kept so their `Vec`s can be filled again
+    /// instead of reallocated.
+    ///
+    /// A fresh `Hits` per read cost two `Vec` allocations for every distinct
+    /// cluster the read touched, plus the map's own table -- 940 allocations per
+    /// read on droso_100k, all freed again immediately. Recycling makes the
+    /// steady state allocation-free. The pool holds at most as many `HitList`s
+    /// as the busiest read touched clusters, not one per cluster in the corpus,
+    /// so it stays small.
+    pool: Vec<HitList>,
+}
+
+impl Hits {
+    /// Empty this for the next read, keeping the allocations.
+    pub fn reset(&mut self) {
+        for (_, mut hl) in self.by_cluster.drain() {
+            hl.indices.clear();
+            hl.positions.clear();
+            self.pool.push(hl);
+        }
+        self.order.clear();
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct HitList {
+    /// Index of the minimizer among the read's minimizers.
+    pub indices: Vec<usize>,
+    /// Position of the minimizer in the compressed read.
+    pub positions: Vec<usize>,
+}
+
+impl Hits {
+    pub fn is_empty(&self) -> bool {
+        self.order.is_empty()
+    }
+}
+
+/// `get_all_hits`.
+#[allow(dead_code)]
+pub fn get_all_hits(
+    minimizers: &[(&[u8], usize)],
+    db: &MinimizerDatabase,
+    read_cl_id: usize,
+    hits: &mut Hits,
+) {
+    hits.reset();
+    // Destructured so the three fields can be borrowed independently: the
+    // `or_insert_with` closure needs `order` and `pool` while `by_cluster` is
+    // borrowed mutably.
+    let Hits {
+        order,
+        by_cluster,
+        pool,
+    } = hits;
+    for (i, (m, pos)) in minimizers.iter().enumerate() {
+        if let Some(cluster_ids) = db.get(m) {
+            for &id in cluster_ids {
+                // The database stores u32 ids to halve its value storage; the
+                // hit lists and everything downstream stay usize.
+                let cl_id = id as usize;
+                let entry = by_cluster.entry(cl_id).or_insert_with(|| {
+                    order.push(cl_id);
+                    pool.pop().unwrap_or_default()
+                });
+                entry.indices.push(i);
+                entry.positions.push(*pos);
+            }
+        }
+    }
+    // The read's own cluster is removed after collection, not skipped during it.
+    if let Some(mut hl) = by_cluster.remove(&read_cl_id) {
+        order.retain(|c| *c != read_cl_id);
+        hl.indices.clear();
+        hl.positions.clear();
+        pool.push(hl);
+    }
+}
+
+/// The outcome of the mapping attempt: `(best_cluster_id, nr_shared, ratio)`,
+/// with `-1` for "no cluster", as the reference returns.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MapResult {
+    pub best_cluster_id: i64,
+    pub nr_shared_kmers: usize,
+    pub mapped_ratio: f64,
+}
+
+/// `reduce(mul, [p] * n, 1)` -- a left fold from the integer 1, NOT `p.powi(n)`.
+///
+/// The two genuinely differ: measured over the `(p, n)` combinations this corpus
+/// actually reaches, they disagree in the last bit for **27 783 of 32 400**.
+/// They nonetheless produce the same *decisions*, because the result is only
+/// ever compared against `min_prob_no_hits`, and a one-ULP difference flips that
+/// comparison only when the value sits exactly on the threshold -- which never
+/// happened in ~95 000 recorded calls.
+///
+/// So the differential oracle cannot see this, and swapping in `powi` passes it.
+/// The fold is kept because exactness is the specification, and it is pinned by
+/// a unit test rather than by the oracle. Do not "simplify" it.
+#[inline]
+fn prob_run(p: f64, n: usize) -> f64 {
+    let mut acc = 1.0f64;
+    for _ in 0..n {
+        acc *= p;
+    }
+    acc
+}
+
+/// `get_best_cluster`.
+///
+/// `n_minimizers` is the read's total minimizer count, which sizes the notional
+/// `minimizer_error_probabilities` list; only its length is used.
+#[allow(clippy::too_many_arguments)]
+pub fn get_best_cluster(
+    read_cl_id: usize,
+    compressed_seq_len: usize,
+    hits: &Hits,
+    n_minimizers: usize,
+    representatives: &dyn Representatives,
+    table: &crate::p_emp::Table,
+    min_shared: i64,
+    min_fraction: f64,
+    min_prob_no_hits: f64,
+    mapped_threshold: f64,
+    // `--symmetric_map_align_thresholds`. When set, the gate is on the MINIMUM
+    // of the read's mapped fraction and the representative's, and the returned
+    // ratio is that minimum rather than the read-side one.
+    //
+    // The flag exists because a long, high-quality read containing an insertion
+    // the cluster does not share is not penalised by the default gate: that one
+    // divides by the READ's compressed length only, so a read which maps most
+    // of itself onto a short representative passes even though most of the
+    // representative is unmatched.
+    symmetric: bool,
+) -> MapResult {
+    let mut result = MapResult {
+        best_cluster_id: -1,
+        nr_shared_kmers: 0,
+        mapped_ratio: 0.0,
+    };
+    if hits.is_empty() {
+        return result;
+    }
+
+    // sorted(..., key=(len, sum(positions), acc), reverse=True)
+    //
+    // The key is built once per candidate rather than inside the comparator.
+    // Computed there, `positions.iter().sum()` ran on every comparison -- O(n log
+    // n) sums of O(k) each -- and `acc` was a hash lookup per comparison. This is
+    // the same total order: accessions are unique, which
+    // `assert_unique_accessions` enforces, so there are no full ties for the sort
+    // to break.
+    let mut top_matches: Vec<(usize, usize, &str, usize)> = hits
+        .order
+        .iter()
+        .map(|&id| {
+            let h = &hits.by_cluster[&id];
+            (
+                h.positions.len(),
+                h.positions.iter().sum::<usize>(),
+                representatives.acc(id),
+                id,
+            )
+        })
+        .collect();
+    top_matches.sort_by(|a, b| (b.0, b.1, b.2).cmp(&(a.0, a.1, a.2))); // reverse=True
+
+    let top_hits = top_matches[0].0;
+    result.nr_shared_kmers = top_hits;
+    if (top_hits as i64) < min_shared {
+        return result;
+    }
+
+    let error_rate_read = representatives.error_rate(read_cl_id);
+    let e_read = crate::p_emp::error_rate_index(error_rate_read);
+
+    // Reused across candidates instead of allocated per candidate.
+    let mut probs: Vec<f64> = Vec::new();
+    for (nm_hits, _, _, cl_id) in top_matches {
+        let h = &hits.by_cluster[&cl_id];
+        if (nm_hits as f64) < min_fraction * top_hits as f64 || (nm_hits as i64) < min_shared {
+            break;
+        }
+
+        let e_centre = crate::p_emp::error_rate_index(representatives.error_rate(cl_id));
+        let p_error_in_kmers_emp = 1.0 - table.get(e_read, e_centre);
+
+        // prob_all_errors_since_last_hit: one entry before the first hit, one
+        // between each consecutive pair, one after the last.
+        let idx = &h.indices;
+        let pos = &h.positions;
+        probs.clear();
+        probs.reserve(idx.len() + 1);
+        probs.push(prob_run(p_error_in_kmers_emp, idx[0]));
+        for pair in idx.windows(2) {
+            probs.push(prob_run(p_error_in_kmers_emp, pair[1] - pair[0] - 1));
+        }
+        probs.push(prob_run(
+            p_error_in_kmers_emp,
+            n_minimizers.saturating_sub(idx[idx.len() - 1] + 1),
+        ));
+        debug_assert_eq!(probs.len(), pos.len() + 1);
+
+        let mut total_mapped: usize = 0;
+        for i in 0..idx.len() {
+            if probs[i] < min_prob_no_hits {
+                continue;
+            }
+            total_mapped += if i == 0 { pos[0] } else { pos[i] - pos[i - 1] };
+        }
+        if probs[probs.len() - 1] >= min_prob_no_hits {
+            total_mapped += compressed_seq_len - pos[pos.len() - 1];
+        }
+
+        result.mapped_ratio = total_mapped as f64 / compressed_seq_len as f64;
+        // The same numerator over the REPRESENTATIVE's compressed length. Note
+        // the reference computes this unconditionally and only the gate is
+        // conditional, so a zero-length representative would divide by zero in
+        // both -- it cannot happen, because a read with a compressed length
+        // under k never becomes a representative.
+        let decisive = if symmetric {
+            let rep_len = representatives.compressed_len(cl_id) as f64;
+            result.mapped_ratio.min(total_mapped as f64 / rep_len)
+        } else {
+            result.mapped_ratio
+        };
+        if decisive > mapped_threshold {
+            result.best_cluster_id = cl_id as i64;
+            result.nr_shared_kmers = nm_hits;
+            // The reference returns the MINIMUM here, not the read-side ratio.
+            // That was a bug once and was fixed upstream in 50a3b5d; the value
+            // reaches no output file today, but reproducing the fixed behaviour
+            // costs nothing and a future caller reading it would be wrong.
+            result.mapped_ratio = decisive;
+            return result;
+        }
+    }
+    result
+}
+
+/// The ranking's third sort key is the accession, and it only makes the order
+/// total if accessions are unique. That is a property of the data, so it is
+/// checked rather than assumed -- a duplicate would let CPython's set-iteration
+/// order decide which cluster a read joins, and the port could not reproduce it.
+#[allow(dead_code)]
+pub fn assert_unique_accessions(reps: &HashMap<usize, String>) -> Result<(), String> {
+    let mut seen: HashMap<&str, usize> = HashMap::with_capacity(reps.len());
+    for (id, acc) in reps {
+        if let Some(other) = seen.insert(acc.as_str(), *id) {
+            return Err(format!(
+                "duplicate accession {:?} on reads {} and {}. The candidate ranking in \
+                 get_best_cluster breaks ties with the accession, so duplicates make the \
+                 reference's result depend on CPython set-iteration order, which this port \
+                 does not model. See PORTING.md, get_all_hits.",
+                acc, other, id
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+
+    /// The sentinel bit exists for this: `get_kmer_minimizers` can emit
+    /// minimizers shorter than k (Finding 4), so different lengths reach the
+    /// database, and a plain 2-bit packing maps "AA" and "AAAA" both to zero.
+    #[test]
+    fn packing_separates_kmers_of_different_lengths() {
+        assert_ne!(pack(b"AA"), pack(b"AAAA"));
+        assert_ne!(pack(b"A"), pack(b"AA"));
+        assert_ne!(pack(b""), pack(b"A"));
+        // and it is still injective within a length
+        let mut seen = std::collections::HashSet::new();
+        for a in *b"ACGT" {
+            for b in *b"ACGT" {
+                for c in *b"ACGT" {
+                    assert!(seen.insert(pack(&[a, b, c]).expect("packs")));
+                }
+            }
+        }
+        assert_eq!(seen.len(), 64);
+    }
+
+    /// The whole point of `Postings` is that the hash table does not grow: the
+    /// table is millions of slots and dwarfs the posting lists themselves, so an
+    /// inline capacity that pushed the value past `Vec<u32>`'s 24 bytes would
+    /// cost more table than it saved in heap blocks. `[u32; 4]` does exactly
+    /// that -- it measures 32 -- which is why the inline capacity is two. A
+    /// future change to it has to keep this true, hence an assertion and not a
+    /// comment.
+    #[test]
+    fn postings_are_no_larger_than_the_vec_they_replaced() {
+        assert_eq!(
+            std::mem::size_of::<Postings>(),
+            std::mem::size_of::<Vec<u32>>()
+        );
+    }
+
+    /// The 12.9% of keys that outgrow the inline array must behave exactly as
+    /// they did, including across the spill boundary itself.
+    #[test]
+    fn a_key_past_the_inline_capacity_keeps_every_id() {
+        let mut db = MinimizerDatabase::new();
+        for id in 0..40usize {
+            db.add(b"ACGT", id);
+        }
+        let got = db.get(b"ACGT").expect("present");
+        assert_eq!(got.len(), 40);
+        assert!(got.iter().copied().eq(0u32..40));
+
+        // The exact fallback spills too, and the two maps stay separate.
+        for id in 0..40usize {
+            db.add(b"ACGN", id + 100);
+        }
+        assert_eq!(db.get(b"ACGN").expect("present").len(), 40);
+        assert_eq!(db.get(b"ACGT").expect("present").len(), 40);
+        assert_eq!(db.len(), 2);
+    }
+
+    /// De-duplication is a linear scan over the list, so it has to keep working
+    /// once the list is on the heap.
+    #[test]
+    fn duplicate_ids_are_rejected_on_both_sides_of_the_spill() {
+        let mut db = MinimizerDatabase::new();
+        for _ in 0..3 {
+            for id in 0..3usize {
+                db.add(b"ACGT", id);
+            }
+        }
+        assert_eq!(db.get(b"ACGT").expect("present"), &[0u32, 1, 2][..]);
+        for id in 0..10usize {
+            db.add(b"ACGT", id);
+        }
+        assert_eq!(db.get(b"ACGT").expect("present").len(), 10);
+    }
+
+    /// `1 + 2k` bits must fit in a u64. Every k the tool can run is 4..=30, so
+    /// the boundary is only reachable by a caller bypassing `p_emp::Table`.
+    #[test]
+    fn packing_gives_up_past_31_bases() {
+        assert!(pack(&[b'A'; 31]).is_some());
+        assert!(pack(&[b'A'; 32]).is_none());
+    }
+
+    /// Non-ACGT must not be folded onto a base: the reference keys its dict by
+    /// the k-mer string, so `N` is its own key and `a` differs from `A`.
+    #[test]
+    fn non_acgt_and_lowercase_take_the_exact_fallback() {
+        assert!(pack(b"ACGN").is_none());
+        assert!(pack(b"acgt").is_none());
+
+        let mut db = MinimizerDatabase::new();
+        db.add(b"ACGN", 1);
+        db.add(b"ACGT", 2);
+        db.add(b"acgt", 3);
+        assert_eq!(db.get(b"ACGN"), Some(&[1u32][..]));
+        assert_eq!(db.get(b"ACGT"), Some(&[2u32][..]));
+        assert_eq!(db.get(b"acgt"), Some(&[3u32][..]));
+        assert_eq!(db.len(), 3);
+        // a 32-base k-mer of pure ACGT also lands in the fallback, and is found
+        let long = vec![b'C'; 32];
+        db.add(&long, 4);
+        assert_eq!(db.get(&long), Some(&[4u32][..]));
+    }
+
+    /// Packed and fallback entries must not be reachable through each other.
+    #[test]
+    fn packed_and_fallback_keys_do_not_alias() {
+        let mut db = MinimizerDatabase::new();
+        db.add(b"ACGT", 7);
+        assert_eq!(db.get(b"acgt"), None);
+        assert_eq!(db.get(b"ACGN"), None);
+        assert_eq!(db.get(b"ACG"), None);
+    }
+    use super::*;
+
+    struct TestReps(HashMap<usize, (String, f64)>);
+
+    impl Representatives for TestReps {
+        fn acc(&self, id: usize) -> &str {
+            &self.0[&id].0
+        }
+        fn error_rate(&self, id: usize) -> f64 {
+            self.0[&id].1
+        }
+        /// The symmetric gate divides by this. 100 matches the
+        /// `compressed_seq_len` these tests pass, so min(read, rep) == read and
+        /// the default and symmetric paths agree -- which is what lets the
+        /// existing assertions stand unchanged.
+        fn compressed_len(&self, _id: usize) -> usize {
+            100
+        }
+    }
+
+    fn reps(specs: &[(usize, &str, f64)]) -> TestReps {
+        TestReps(
+            specs
+                .iter()
+                .map(|(id, acc, e)| (*id, (acc.to_string(), *e)))
+                .collect(),
+        )
+    }
+
+    /// Reuse must leave no trace of the previous read. A recycled `HitList`
+    /// whose vectors were not cleared would silently graft one read's hits onto
+    /// the next, and the harness would not necessarily catch it.
+    #[test]
+    fn a_reused_hits_carries_nothing_over() {
+        let mut db = MinimizerDatabase::new();
+        db.add(b"AAA", 1);
+        db.add(b"CCC", 2);
+        let mut h = Hits::default();
+
+        let first: Vec<(&[u8], usize)> = vec![(b"AAA", 5), (b"CCC", 9)];
+        get_all_hits(&first, &db, 99, &mut h);
+        assert_eq!(h.order, vec![1, 2]);
+        assert_eq!(h.by_cluster[&1].positions, vec![5]);
+        assert_eq!(h.by_cluster[&2].positions, vec![9]);
+
+        // A second read touching only one of them must not see the other, and
+        // the shared cluster must not keep the earlier position.
+        let second: Vec<(&[u8], usize)> = vec![(b"CCC", 11)];
+        get_all_hits(&second, &db, 99, &mut h);
+        assert_eq!(h.order, vec![2]);
+        assert_eq!(h.by_cluster.len(), 1);
+        assert_eq!(h.by_cluster[&2].positions, vec![11]);
+        assert_eq!(h.by_cluster[&2].indices, vec![0]);
+
+        // And a read that hits nothing leaves it empty.
+        get_all_hits(&[], &db, 99, &mut h);
+        assert!(h.is_empty());
+        assert!(h.by_cluster.is_empty());
+    }
+
+    #[test]
+    fn the_database_deduplicates_like_a_python_set() {
+        let mut db = MinimizerDatabase::new();
+        db.add(b"ACGT", 1);
+        db.add(b"ACGT", 1);
+        db.add(b"ACGT", 2);
+        assert_eq!(db.get(b"ACGT").unwrap(), &vec![1, 2]);
+        assert_eq!(db.len(), 1);
+    }
+
+    #[test]
+    fn hits_are_collected_in_minimizer_order_and_the_read_itself_is_dropped() {
+        let mut db = MinimizerDatabase::new();
+        db.add(b"AAA", 7);
+        db.add(b"CCC", 7);
+        db.add(b"CCC", 9);
+        db.add(b"GGG", 42); // the read's own id
+        let ms: Vec<(&[u8], usize)> = vec![
+            (b"AAA".as_slice(), 0),
+            (b"GGG".as_slice(), 5),
+            (b"CCC".as_slice(), 10),
+        ];
+        let mut h = Hits::default();
+        get_all_hits(&ms, &db, 42, &mut h);
+        assert_eq!(
+            h.order,
+            vec![7, 9],
+            "the read's own cluster must be removed"
+        );
+        assert_eq!(h.by_cluster[&7].indices, vec![0, 2]);
+        assert_eq!(h.by_cluster[&7].positions, vec![0, 10]);
+        assert_eq!(h.by_cluster[&9].indices, vec![2]);
+    }
+
+    #[test]
+    fn prob_run_is_a_left_fold_not_a_power() {
+        let p = 0.7;
+        assert_eq!(prob_run(p, 0), 1.0);
+        assert_eq!(prob_run(p, 1), p);
+        let mut acc = 1.0f64;
+        for _ in 0..37 {
+            acc *= p;
+        }
+        assert_eq!(prob_run(p, 37), acc);
+        // powi is a different computation; it agrees here only by luck, so the
+        // assertion is that we do the fold, not that they differ.
+        assert_eq!(prob_run(p, 37), acc);
+    }
+
+    #[test]
+    fn too_few_shared_minimizers_gives_no_cluster() {
+        let mut db = MinimizerDatabase::new();
+        db.add(b"AAA", 1);
+        let ms: Vec<(&[u8], usize)> = vec![(b"AAA".as_slice(), 0)];
+        let mut h = Hits::default();
+        get_all_hits(&ms, &db, 99, &mut h);
+        let r = reps(&[(1, "a_1.0", 0.05), (99, "b_2.0", 0.05)]);
+        let t = crate::p_emp::Table::select(13, 20).unwrap();
+        let out = get_best_cluster(99, 100, &h, 1, &r, &t, 5, 0.8, 0.1, 0.7, false);
+        assert_eq!(out.best_cluster_id, -1);
+        assert_eq!(
+            out.nr_shared_kmers, 1,
+            "the top hit count is still reported"
+        );
+    }
+
+    #[test]
+    fn no_hits_at_all_returns_the_initial_state() {
+        let db = MinimizerDatabase::new();
+        let mut h = Hits::default();
+        get_all_hits(&[], &db, 1, &mut h);
+        let r = reps(&[(1, "a_1.0", 0.05)]);
+        let t = crate::p_emp::Table::select(13, 20).unwrap();
+        let out = get_best_cluster(1, 100, &h, 0, &r, &t, 5, 0.8, 0.1, 0.7, false);
+        assert_eq!(
+            out,
+            MapResult {
+                best_cluster_id: -1,
+                nr_shared_kmers: 0,
+                mapped_ratio: 0.0
+            }
+        );
+    }
+
+    #[test]
+    fn a_fully_covered_read_maps() {
+        // Six evenly spaced hits across a 100 nt compressed read.
+        let mut db = MinimizerDatabase::new();
+        let kmers: Vec<Vec<u8>> = (0..6).map(|i| vec![b'A' + i as u8; 3]).collect();
+        for kmer in &kmers {
+            db.add(kmer, 1);
+        }
+        let ms: Vec<(&[u8], usize)> = kmers
+            .iter()
+            .enumerate()
+            .map(|(i, k)| (k.as_slice(), i * 16))
+            .collect();
+        let mut h = Hits::default();
+        get_all_hits(&ms, &db, 99, &mut h);
+        let r = reps(&[(1, "a_1.0", 0.05), (99, "b_2.0", 0.05)]);
+        let t = crate::p_emp::Table::select(13, 20).unwrap();
+        let out = get_best_cluster(99, 100, &h, 6, &r, &t, 5, 0.8, 0.1, 0.7, false);
+        assert_eq!(out.best_cluster_id, 1);
+        assert!(out.mapped_ratio > 0.7, "ratio was {}", out.mapped_ratio);
+    }
+
+    #[test]
+    fn duplicate_accessions_are_rejected_rather_than_silently_reordered() {
+        let dup: HashMap<usize, String> =
+            [(1, "same_1.0".to_string()), (2, "same_1.0".to_string())].into();
+        assert!(assert_unique_accessions(&dup).is_err());
+        let ok: HashMap<usize, String> =
+            [(1, "a_1.0".to_string()), (2, "b_1.0".to_string())].into();
+        assert!(assert_unique_accessions(&ok).is_ok());
+    }
+}

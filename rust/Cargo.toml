@@ -22,7 +22,38 @@ license = "GPL-3.0"
 name = "NGSpeciesID"
 path = "src/main.rs"
 
+[features]
+# parasail's own C library, linked through FFI. Exact by construction -- it IS
+# the implementation the reference calls -- and 13-16x faster than the scalar
+# port.
+#
+# OFF BY DEFAULT, which inverts isONclust's choice, and deliberately. That port
+# is about speed on 100 000-read transcriptomes; this one is about installation
+# working at all (PORTING.md, Goal), and the corpora are amplicons: 3 000 reads
+# clustering in 1.6 seconds. Trading a cmake-and-libclang build dependency for
+# time nobody is waiting on would be the wrong way round. The pure-Rust
+# `parasail.rs` is equally exact -- 18 633 alignments identical, CIGAR and
+# ratio, in the isONclust port -- so this is a build-complexity choice and not a
+# correctness one.
+#
+# Turn it on with `--features parasail-ffi` if a corpus ever gets big enough to
+# care.
+default = []
+parasail-ffi = ["dep:libparasail-sys"]
+
 [dependencies]
+libparasail-sys = { version = "0.2", optional = true }
+# Hashing for the hot integer-keyed maps. The minimizer database is looked up
+# once per minimizer per read with a u64 key, and SipHash's strength buys
+# nothing there while costing measurably. Safe with respect to byte-identity
+# only because nothing depends on these maps' iteration order -- see
+# cluster::Postings.
+rustc-hash = "2.1.3"
+# Posting lists in the minimizer database, which are overwhelmingly tiny: most
+# keys hold exactly one representative id. `SmallVec<[u32; 2]>` is the same 24
+# bytes as `Vec<u32>`, so the table does not grow, and most of those heap blocks
+# simply stop existing.
+smallvec = "1.15"
 
 [profile.release]
 opt-level = 3

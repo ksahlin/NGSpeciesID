@@ -34,7 +34,8 @@
 //! * the `logging.error` pair when `--q` filters every read.
 
 use crate::cli::Args;
-use crate::{fastq, pyfloat, sorting};
+use crate::{blockalign, fastq, p_emp, packed, pyfloat, sorting, sweep};
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::path::{Path, PathBuf};
 
 /// How far the pipeline got.
@@ -74,12 +75,282 @@ pub fn run(args: &Args) -> Outcome {
         .expect("cli::validate rejects a missing --outfolder");
     let paths = Paths::in_outfolder(outfolder);
 
-    match sort_stage(args, &paths) {
+    let sorted_count = match sort_stage(args, &paths) {
         Err(code) => return Outcome::Failed(code),
-        Ok(_n) => {}
+        Ok(n) => n,
+    };
+
+    match cluster_stage(args, &paths, sorted_count) {
+        Err(code) => Outcome::Failed(code),
+        Ok(nontrivial) => {
+            if args.consensus {
+                return Outcome::Incomplete("consensus");
+            }
+            // The second and last line a default run prints.
+            eprintln!("Finished Clustering: {nontrivial} clusters formed");
+            Outcome::Done
+        }
+    }
+}
+
+/// The score the sorting stage appended, recovered with
+/// `float(acc.split("_")[-1])`.
+fn score_of(acc: &str) -> f64 {
+    acc.rsplit('_')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(f64::NAN)
+}
+
+/// `"_".join(acc.split("_")[:-1])` -- drop the score suffix on the way out.
+///
+/// Note what this does to an accession with no underscore at all: the
+/// reference's join of an empty list is `""`, not the original string. Faithful.
+pub fn strip_score(acc: &str) -> &str {
+    match acc.rfind('_') {
+        Some(i) => &acc[..i],
+        None => "",
+    }
+}
+
+/// Steps 2 and 3: filter, subsample, then cluster and write the output.
+///
+/// Returns the number of clusters with more than one read, which is the number
+/// the reference reports as "clusters formed".
+fn cluster_stage(args: &Args, paths: &Paths, sorted_count: usize) -> Result<usize, i32> {
+    // The reference re-reads sorted.fastq rather than reusing anything from the
+    // sort, and recovers the score by parsing it back out of the accession. So
+    // the accession the sweep sees is the one WITH the score suffix, and the
+    // f64 is whatever `float()` makes of the text `str()` produced. Reproduced
+    // rather than shortcut: that round trip through a decimal string is part of
+    // the contract (PORTING.md, "The pipeline, in one pass", step 2).
+    let mut reads: Vec<sweep::SweepRead> = Vec::with_capacity(sorted_count);
+    // Dense read index -> ordinal in sorted.fastq. Identity until `--m`/`--s` or
+    // a subsample drops something, and then NOT: the quality strings for the
+    // representatives are recovered by streaming sorted.fastq, and looking them
+    // up by dense index fetches the wrong read.
+    //
+    // Found by the goldens. `m750s50` produced a 649-character quality string
+    // against the reference's 725, on a cluster whose sequence, score and error
+    // rate were all correct -- so `final_clusters.tsv` matched and only column 4
+    // of `final_cluster_origins.tsv` moved.
+    let mut ordinal_of: Vec<usize> = Vec::with_capacity(sorted_count);
+    let mut ordinal = 0usize;
+    // 2-bit packing cannot represent a fifth symbol, so a non-ACGT base is read
+    // as `A`, which changes minimizer selection and the alignment path. Every
+    // committed corpus is pure ACGT, so this stays zero -- and a corpus that is
+    // not would diverge silently without this count.
+    let mut substituted = 0usize;
+    // The length filter. `--m 0 --s 0` -- the default -- disables it entirely,
+    // and the reference tests `> 0` on BOTH, so `--m 800 --s 0` is also
+    // disabled. Faithful.
+    let filtering = args.target_length > 0 && args.target_deviation > 0;
+    let lo = args.target_length - args.target_deviation;
+    let hi = args.target_length + args.target_deviation;
+
+    if let Err(e) = fastq::for_each_file(&paths.sorted, |r| {
+        let this_ordinal = ordinal;
+        ordinal += 1;
+        if filtering {
+            let n = r.seq.len() as i64;
+            if n < lo || n > hi {
+                return;
+            }
+        }
+        ordinal_of.push(this_ordinal);
+        let score = score_of(&r.name);
+        let (seq, sub) = packed::PackedSeq::from_bytes(r.seq.as_bytes());
+        substituted += sub;
+        let qual = r.qual.unwrap_or_default();
+        let qual_b = qual.as_bytes();
+        let hp_error_rate = sweep::compressed_error_rate(r.seq.as_bytes(), qual_b);
+        let err_per_base = blockalign::expected_errors(qual_b) / r.seq.len() as f64;
+        reads.push(sweep::SweepRead {
+            // The reference keeps `i` from `enumerate` over ALL reads, so its
+            // cluster ids are sparse when the filter drops something. Using the
+            // dense position instead is safe and is checked by the goldens: the
+            // only place the id reaches output is the third sort key, and the
+            // filter preserves order, so sparse and dense ids sort identically.
+            id: reads.len(),
+            prev_batch_index: 0,
+            acc: r.name.into(),
+            seq,
+            hp_error_rate,
+            err_per_base,
+            score,
+        });
+    }) {
+        eprintln!("Error: cannot read {}: {e}", paths.sorted.display());
+        return Err(1);
+    }
+    if substituted > 0 {
+        eprintln!(
+            "Warning: {substituted} non-ACGT bases were read as 'A'. Sequences are 2-bit packed,\n\
+             which cannot represent a fifth symbol, so output for this input will NOT match the\n\
+             Python reference. See rust/src/packed.rs."
+        );
     }
 
-    Outcome::Incomplete("clustering")
+    // --top_reads: the highest-scoring `--sample_size` reads, which is the head
+    // of a file already sorted by score descending. `--sample_size` WITHOUT
+    // --top_reads is the seeded random draw and is not implemented yet.
+    if args.top_reads {
+        reads.truncate(args.sample_size.max(0) as usize);
+        ordinal_of.truncate(reads.len());
+    } else if args.sample_size > 0 && (args.sample_size as usize) < reads.len() {
+        return Err(not_implemented_stage("--sample_size without --top_reads"));
+    }
+
+    let nr_reads = reads.len();
+    eprintln!("Starting Clustering: {nr_reads} reads");
+
+    // The probability table. `None` is Finding 8: the reference builds an empty
+    // dict and dies with a KeyError on a tuple of two floats the first time it
+    // looks anything up. 3 361 CLI-valid (k, w) pairs reach it.
+    let Some(table) = p_emp::Table::select(args.k, args.w) else {
+        eprintln!(
+            "Error: no empirical probability table for --k {} --w {}.",
+            args.k, args.w
+        );
+        eprintln!("The table covers --k 10 to 30; --w must be within 2 of a value it stores.");
+        return Err(1);
+    };
+
+    if args.nr_cores > 1 {
+        return Err(not_implemented_stage("--t > 1"));
+    }
+
+    let params = sweep::SweepParams {
+        k: args.k as usize,
+        w: args.w as usize,
+        min_shared: args.min_shared,
+        min_fraction: args.min_fraction,
+        min_prob_no_hits: args.min_prob_no_hits,
+        mapped_threshold: args.mapped_threshold,
+        aligned_threshold: args.aligned_threshold,
+        symmetric_map_align_thresholds: args.symmetric_map_align_thresholds,
+    };
+    let clusters = sweep::OrderedClusters::default();
+    let reps: FxHashMap<usize, sweep::ReadInfo> = FxHashMap::default();
+    let db = crate::cluster::MinimizerDatabase::default();
+    let res = sweep::reads_to_clusters(clusters, reps, &reads, db, 1, &table, params);
+
+    write_output(args, paths, &reads, &ordinal_of, &res)
+}
+
+/// A stage that is not written yet, reported from inside `cluster_stage` where
+/// the error type is an exit code. Keeps `EXIT_NOT_IMPLEMENTED` in one place.
+fn not_implemented_stage(what: &str) -> i32 {
+    eprintln!(
+        "NGSpeciesID (Rust port): {what} is not implemented yet. \
+         Arguments parsed and validated successfully."
+    );
+    crate::EXIT_NOT_IMPLEMENTED as i32
+}
+
+/// Step 4: `final_clusters.tsv` and `final_cluster_origins.tsv`.
+///
+/// Ordered by `(cluster size, representative score)` descending. Python's
+/// `sorted(..., reverse=True)` is stable and does **not** reverse ties, so equal
+/// pairs keep dict insertion order -- which after the reassignment step is
+/// ascending cluster id. Hence the third key.
+fn write_output(
+    args: &Args,
+    paths: &Paths,
+    reads: &[sweep::SweepRead],
+    ordinal_of: &[usize],
+    res: &sweep::SweepResult,
+) -> Result<usize, i32> {
+    let clusters = &res.clusters;
+    let representatives = &res.representatives;
+
+    let mut order: Vec<usize> = clusters.order.clone();
+    order.sort_by(|a, b| {
+        let ka = (clusters.map[a].len(), representatives[a].score);
+        let kb = (clusters.map[b].len(), representatives[b].score);
+        kb.0.cmp(&ka.0)
+            .then(kb.1.partial_cmp(&ka.1).expect("scores are finite"))
+            .then(a.cmp(b))
+    });
+
+    // The representatives' quality strings, which the clustering stage does not
+    // keep resident. One sequential pass over sorted.fastq for the survivors.
+    // By ORDINAL IN sorted.fastq, not by dense read index. See `ordinal_of`.
+    let want: FxHashSet<usize> = order.iter().map(|c| ordinal_of[*c]).collect();
+    let rep_quals = match quals_for(&paths.sorted, &want) {
+        Ok(q) => q,
+        Err(e) => {
+            eprintln!("Error: cannot re-read {}: {e}", paths.sorted.display());
+            return Err(1);
+        }
+    };
+
+    let mut clusters_out = String::new();
+    let mut origins_out = String::new();
+    let mut nontrivial = 0usize;
+    for (output_cl_id, c_id) in order.iter().enumerate() {
+        let rep = &representatives[c_id];
+        origins_out.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            output_cl_id,
+            strip_score(&rep.acc),
+            String::from_utf8_lossy(&rep.seq.to_bytes()),
+            rep_quals
+                .get(&ordinal_of[*c_id])
+                .map(String::as_str)
+                .unwrap_or(""),
+            pyfloat::repr(rep.score),
+            pyfloat::repr(rep.error_rate.unwrap_or(f64::NAN)),
+        ));
+        // Within a cluster, reads are score-descending. The sort is deliberately
+        // NOT total: ties keep member-list order, which is ascending read id,
+        // because Python's sort is stable.
+        let mut members: Vec<u32> = clusters.map[c_id].clone();
+        members.sort_by(|a, b| {
+            reads[*b as usize]
+                .score
+                .partial_cmp(&reads[*a as usize].score)
+                .expect("scores are finite")
+        });
+        for id in &members {
+            clusters_out.push_str(&format!(
+                "{}\t{}\n",
+                output_cl_id,
+                strip_score(&reads[*id as usize].acc)
+            ));
+        }
+        if clusters.map[c_id].len() > 1 {
+            nontrivial += 1;
+        }
+    }
+
+    let outfolder = Path::new(args.outfolder.as_deref().expect("validated"));
+    let cp = outfolder.join("final_clusters.tsv");
+    let op = outfolder.join("final_cluster_origins.tsv");
+    if let Err(e) = std::fs::write(&cp, clusters_out).and_then(|_| std::fs::write(&op, origins_out))
+    {
+        eprintln!("Error: cannot write output: {e}");
+        return Err(1);
+    }
+    Ok(nontrivial)
+}
+
+/// Quality strings for a set of read ids, recovered by streaming sorted.fastq.
+/// A read's id is its ordinal there, so one sequential pass finds them all.
+fn quals_for(
+    sorted_path: &Path,
+    want: &FxHashSet<usize>,
+) -> std::io::Result<FxHashMap<usize, String>> {
+    let mut out: FxHashMap<usize, String> = FxHashMap::default();
+    let mut ordinal = 0usize;
+    fastq::for_each_file(sorted_path, |r| {
+        let this = ordinal;
+        ordinal += 1;
+        if want.contains(&this) {
+            out.insert(this, r.qual.unwrap_or_default());
+        }
+    })?;
+    Ok(out)
 }
 
 /// Step 1: `get_sorted_fastq_for_cluster.main`.
