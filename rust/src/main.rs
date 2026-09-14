@@ -19,6 +19,7 @@ mod fastq;
 mod minimizers;
 mod p_emp;
 mod packed;
+mod parallelize;
 mod parasail;
 #[cfg(feature = "parasail-ffi")]
 mod parasail_ffi;

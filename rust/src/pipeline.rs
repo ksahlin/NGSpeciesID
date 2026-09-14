@@ -34,7 +34,7 @@
 //! * the `logging.error` pair when `--q` filters every read.
 
 use crate::cli::Args;
-use crate::{blockalign, fastq, p_emp, packed, pyfloat, sorting, sweep};
+use crate::{blockalign, fastq, p_emp, packed, parallelize, pyfloat, sorting, sweep};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::path::{Path, PathBuf};
 
@@ -216,10 +216,6 @@ fn cluster_stage(args: &Args, paths: &Paths, sorted_count: usize) -> Result<usiz
         return Err(1);
     };
 
-    if args.nr_cores > 1 {
-        return Err(not_implemented_stage("--t > 1"));
-    }
-
     let params = sweep::SweepParams {
         k: args.k as usize,
         w: args.w as usize,
@@ -230,6 +226,48 @@ fn cluster_stage(args: &Args, paths: &Paths, sorted_count: usize) -> Result<usiz
         aligned_threshold: args.aligned_threshold,
         symmetric_map_align_thresholds: args.symmetric_map_align_thresholds,
     };
+
+    let outfolder = Path::new(args.outfolder.as_deref().expect("validated"));
+    if args.nr_cores > 1 {
+        // `--t` does NOT parallelise the sweep -- it REPLACES it. Reads are cut
+        // into batches, each clustered independently with its own minimizer
+        // database, and the survivors are pooled and re-clustered until one
+        // batch remains. Every `--t` value is its own answer: 49 / 42 / 35 / 33
+        // clusters at 1 / 2 / 4 / 8 on the 3 000-read corpus. PORTING.md,
+        // "With --t > 1 this is a different algorithm".
+        //
+        // `--batch_type` has already been validated by cli::validate, so the
+        // parse below cannot fail; the reference reaches a ValueError here
+        // instead (Finding 5).
+        let bt = parallelize::BatchType::parse(&args.batch_type)
+            .expect("cli::validate rejects an unknown --batch_type");
+        let r = parallelize::parallel_clustering(
+            &reads,
+            args.nr_cores as usize,
+            bt,
+            &table,
+            params,
+            &paths.sorted,
+            outfolder,
+        );
+        if let Some(msg) = &r.intermediate_error {
+            eprintln!("Error: {msg}");
+            return Err(1);
+        }
+        let res = sweep::SweepResult {
+            clusters: r.clusters,
+            representatives: r.representatives,
+            db: crate::cluster::MinimizerDatabase::new(),
+            batch_index: 0,
+            mapped_passed: r.mapped_passed,
+            aln_passed: r.aln_passed,
+            aln_called: r.aln_called,
+            skipped_short: r.skipped_short,
+            times: r.times,
+        };
+        return write_output(args, paths, &reads, &ordinal_of, &res);
+    }
+
     let clusters = sweep::OrderedClusters::default();
     let reps: FxHashMap<usize, sweep::ReadInfo> = FxHashMap::default();
     let db = crate::cluster::MinimizerDatabase::default();
@@ -333,6 +371,49 @@ fn write_output(
         return Err(1);
     }
     Ok(nontrivial)
+}
+
+/// Byte range of each wanted record in sorted.fastq.
+///
+/// The `--t > 1` path writes an intermediate per merge iteration, each needing
+/// the surviving representatives' quality strings. Streaming the whole file once
+/// per iteration would be the obvious thing and is not what this does: the
+/// ranges are found once, and each iteration reads only the bytes it needs.
+pub fn record_ranges_for(
+    sorted_path: &Path,
+    want: &FxHashSet<usize>,
+) -> std::io::Result<FxHashMap<usize, (u64, u32)>> {
+    let mut out: FxHashMap<usize, (u64, u32)> = FxHashMap::default();
+    out.reserve(want.len());
+    let mut ordinal = 0usize;
+    fastq::for_each_file_indexed(sorted_path, |_r, at, n| {
+        let this = ordinal;
+        ordinal += 1;
+        if want.contains(&this) {
+            out.insert(this, (at, n));
+        }
+    })?;
+    Ok(out)
+}
+
+/// One record's quality string, read from its byte range.
+pub fn qual_at(
+    src: &std::fs::File,
+    at: u64,
+    n: u32,
+    raw: &mut Vec<u8>,
+) -> std::io::Result<Option<String>> {
+    use std::os::unix::fs::FileExt;
+    raw.resize(n as usize, 0);
+    src.read_exact_at(raw, at)?;
+    let text = String::from_utf8_lossy(raw);
+    let mut qual = None;
+    // Re-parsed with the parser that produced the range, so the bytes get one
+    // interpretation and not two.
+    fastq::for_each(text.split_inclusive('\n'), |r| {
+        qual = Some(r.qual.unwrap_or_default())
+    });
+    Ok(qual)
 }
 
 /// Quality strings for a set of read ids, recovered by streaming sorted.fastq.

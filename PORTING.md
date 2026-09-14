@@ -198,7 +198,10 @@ that wrote it.
 | output goldens recorded | **done, 51 cases on both corpora** | `bench/golden/<corpus>/manifest.tsv`. Includes every `--consensus` case, both polishers, and the `--t > 1` merge intermediates |
 | goldens are reproducible | **done** | `equivalence.sh stable` records the whole matrix twice and diffs: 191 checks, identical. It found two real defects on the way — *Finding 23* and *Finding 24* |
 | the harness itself is tested | **done** | five deliberately-broken "ports" run against the goldens; see *Has the harness got teeth?* |
-| **CLI parity** | **done for the 23 exact cases, on both corpora** | `equivalence.sh cli verify`: **32 of 39 checkable** — all 23 exact byte-identical, plus 8 of the 15 traceback cases. 48 unit and integration tests, `clippy -D warnings` and `cargo fmt` clean. The 7 remaining traceback cases need runtime stages and fail loudly on the exit code |
+| **CLI parity** | **done for the 23 exact cases, on both corpora** | `equivalence.sh cli verify`: **34 of 39 checkable** — all 23 exact byte-identical, plus 11 of the 15 traceback cases. `clippy -D warnings` and `cargo fmt` clean |
+| **the sorting stage** | **done, byte-identical on both corpora** | `equivalence.sh stage sort`: **52 of 52**. `sorted.fastq` and `logfile.txt` |
+| **the clustering engine, `--t 1`** | **done, byte-identical on both corpora** | carried across from isONclust with four deliberate changes; `--symmetric_map_align_thresholds` written from scratch |
+| **`--t > 1`** | **done, byte-identical on both corpora** | `parallelize.rs`, including every per-iteration `<n>/pre_clusters.csv` and `<n>/cluster_origins.csv`. The batch counts, the merge walk and the iteration count all match |
 | stage oracles | **written and exercised on both corpora; the replay half waits for the port** | `bench/dump_reference.py` covers six stages, three of them new here. *Finding 25* has the coverage counts |
 | corpora | **done, 2 committed, both measured for discriminating power** | *The corpora*, *Finding 19* |
 | case matrix swept on both corpora | **done** | 24 cases; `Supplementary_File1_reads.fastq` gives 19 distinct results and 1 unintended collision, `sample_h1.fastq` gives 12 and 8 |
@@ -915,6 +918,43 @@ at all — no consensus, no warning.
 The port must reproduce the exit code. Whether it reproduces the traceback is a separate question, and
 the fix — treat `--consensus` without a polisher as "draft consensus only", which is what a user
 plainly means, and reject a polisher without `--consensus` — belongs in *Deferred improvements*.
+
+### Finding 26 — the unconditional `yield batch` is faithful and nothing exercises it
+
+`batch_list` yields its final batch **unconditionally**, at all three of its
+trailing `yield batch` statements. isONclust guards every one with `if batch:`.
+So when the last chunk lands exactly on the threshold, NGSpeciesID produces an
+**empty final batch** and isONclust does not.
+
+That is not cosmetic: the batch count drives the merge-iteration count, which
+decides how many numbered `<n>/` directories a run writes, and those are
+recorded output.
+
+Measured by calling the reference's own `batch_list`:
+
+| reads | length | `--t` | batches | sizes |
+| --- | --- | --- | --- | --- |
+| 2 | 10 | 2 | 2 | `[2, 0]` ← empty |
+| 6 | 10 | 3 | 3 | `[3, 3, 0]` ← empty |
+| 4 | 10 | 2 | 2 | `[3, 1]` |
+| 10 | 10 | 5 | 4 | `[3, 3, 3, 1]` |
+
+**And neither committed corpus reaches it.** Every `(corpus, --t, --batch_type)`
+combination in the case matrix was swept: not one produces an empty batch. So
+the goldens cannot tell the guarded version from the unguarded one, and a port
+that inherited isONclust's `if batch:` would pass every case.
+
+The port implements the unconditional version and pins it with a unit test built
+from the table above, because *a change nothing exercises is a change nobody has
+checked*. It is the same argument as *Finding 19* and *Finding 25*, arriving for
+a third time.
+
+Worth noting why the two repositories differ at all: they fixed the same
+underlying defect in two different places. isONclust stopped yielding empty
+batches; NGSpeciesID instead wrote `min(prev_b_indices or [1])` in `cluster.py`,
+which covers **one** of the two `min()` call sites an empty batch can reach. The
+other is `parallelize.py`'s own, and that is exactly why *Finding 5* crashes
+there.
 
 ### Finding 5 — `--batch_type weighted` is documented and crashes, and so does every typo
 
