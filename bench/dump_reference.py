@@ -249,10 +249,25 @@ def dump_spoa(args, out):
     max_seqs_for_consensus` -- admitting exactly that many sequences, unlike
     isONcorrect's bare `>`.
 
+    THE QUALITY STRING IS PART OF THE INPUT. `run_spoa` hands spoa a FASTQ, and
+    spoa's CLI weights the graph by per-base quality whenever the input has any:
+
+        if (it->quality.empty()) graph.AddAlignment(alignment, it->data);
+        else                     graph.AddAlignment(alignment, it->data, it->quality);
+
+    with weight = ord(q) - 33. Nothing in run_spoa's argument list says so, and
+    an earlier version of this dump recorded only the sequences -- which made
+    every comparison against a Rust POA fail for a reason that had nothing to do
+    with the POA. Measured: the same 20 sequences give an 847 bp consensus as
+    FASTQ and 860 bp as FASTA.
+
+    isONcorrect passes a FASTA, so its spoars validation genuinely does not
+    cover this.
+
     Format, per invocation:
 
         SPOA\t<n_seqs>\t<consensus>
-        SEQ\t<i>\t<accession>\t<sequence>
+        SEQ\t<i>\t<accession>\t<sequence>\t<quality>
         ...one SEQ per sequence, in the order written to the temp file...
     """
     from modules import consensus as _cons
@@ -265,8 +280,9 @@ def dump_spoa(args, out):
         if not (args.max_calls and state["n"] >= args.max_calls):
             seqs = list(help_functions.readfq(open(reads)))
             out.write("SPOA\t{0}\t{1}\n".format(len(seqs), res))
-            for i, (acc, (seq, _qual)) in enumerate(seqs):
-                out.write("SEQ\t{0}\t{1}\t{2}\n".format(i, acc, seq))
+            for i, (acc, (seq, qual)) in enumerate(seqs):
+                out.write("SEQ\t{0}\t{1}\t{2}\t{3}\n".format(
+                    i, acc, seq, qual if qual is not None else ""))
             state["n"] += 1
         return res
 

@@ -25,6 +25,7 @@ mod parasail;
 mod parasail_ffi;
 mod phred;
 mod pipeline;
+mod poa;
 mod pyfloat;
 mod pyrandom;
 mod pyround;

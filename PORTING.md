@@ -396,7 +396,7 @@ Missing tools must **exit non-zero and name the tool**. Today they surface as a
 buried in it; the port should say `racon not found on PATH` and nothing else. This is the one place
 where improving on the reference costs nothing measurable, and it should still be its own commit.
 
-## spoa
+## spoa — **measured, and `spoars` was rejected**
 
 `run_spoa` invokes:
 
@@ -404,34 +404,76 @@ where improving on the reference costs nothing measurable, and it should still b
 spoa <reads.fq> -l 0 -r 0 -g -2
 ```
 
-This is **byte-for-byte the invocation isONcorrect uses**, and isONcorrect's port measured `spoars`
-against the real `spoa` binary on it: **505 of 505 unique cases produced an identical consensus**,
-across 8 parameter combinations, with up to 28 sequences per POA. Resolved against spoa's CLI
-defaults the configuration is `kSW` (local), **linear** gap `-2`, match `+5`, mismatch `-4`,
-consensus only.
+Byte-for-byte the invocation isONcorrect uses, where `spoars` was measured
+identical on **505 of 505** cases. **That result does not transfer, and the port
+shells out to `spoa` instead.** Measured on ten invocations recorded from this
+repository's own corpora by `bench/dump_reference.py --stage spoa`:
 
-```rust
-// spoa <fq> -l 0 -r 0 -g -2  ->  kSW (local), linear gap -2, m=+5, n=-4
-let scoring = Scoring::new(5, -4, -2, -2, -2, -2)?;
-let mut engine = SimdEngine::new(AlignmentType::Local, scoring);
+| attempt | result |
+| --- | --- |
+| `spoars` 0.1.4, weight 1 per base | **0 of 10** identical — 860 bp against 847 |
+| …with spoa's real CLI defaults for `e`/`q`/`c` | **0 of 10**, byte-for-byte the same failures |
+| …quality-weighted, as spoa actually does | **0 of 10**, but much closer: 848 against 847 |
+
+**The control is what makes that conclusion safe.** The real `spoa` binary, given
+the recorded input reconstructed as a FASTQ, reproduces the recorded consensus in
+**6 of 6** cases. So the oracle captures everything spoa needs — sequences,
+qualities, and insertion order — and the remaining 1–7 bp differences are
+`spoars` itself, not the harness.
+
+### The quality trap, which cost the first two attempts
+
+`run_spoa` hands spoa a **FASTQ**, and spoa's CLI weights the graph by per-base
+quality whenever the input has any:
+
+```cpp
+if (it->quality.empty()) graph.AddAlignment(alignment, it->data);
+else                     graph.AddAlignment(alignment, it->data, it->quality);
 ```
 
-Two differences from isONcorrect's use that must be checked rather than assumed:
+with weight `ord(q) - 33`. **Nothing in `run_spoa`'s argument list says so.**
+Measured: the same 20 sequences give an **847 bp** consensus as FASTQ and
+**860 bp** as FASTA. The first version of the dump recorded only the sequences,
+so the first two attempts were comparing two different problems — and both
+failures looked like a POA disagreement.
 
-1. **The input is a fastq, not a fasta.** spoa reads both, but confirm `spoars` is fed the same
-   sequences in the same order — including the `--max_seqs_for_consensus` cutoff, which is
-   `i >= max_seqs_for_consensus` (a `>=`, admitting exactly `max_seqs_for_consensus` sequences,
-   unlike isONcorrect's `>`).
-2. **The sequences are far longer and there are far more of them.** isONcorrect POAs correction
-   intervals; this POAs whole amplicon reads — 300 to 1 600 bases, up to the full cluster. The
-   oracle has to be re-recorded on this corpus, not inherited.
+isONcorrect passes a **FASTA**. That is why its 505/505 result is real and why it
+says nothing about this repository.
 
-**Decision: adopt `spoars`, gated on its own differential oracle against the `spoa` binary recorded
-from this repository's corpora.** If it fails, the fallbacks are `spoa`/`spoa-sys` bindings (identical
-by construction, at the cost of a C++ toolchain) or keeping the subprocess (identical by
-construction, at the cost of the installation win for `--consensus`).
+### Why it would not have transferred anyway
 
-## The aligners
+| | isONcorrect | NGSpeciesID |
+| --- | --- | --- |
+| sequences per POA | up to 28 | up to **1 198** |
+| sequence length | correction intervals | up to **1 600 bp** |
+| input format | FASTA | **FASTQ, quality-weighted** |
+
+### What the port does
+
+**Shells out to `spoa`, exactly as the reference does**, with the same argument
+vector. Exact by construction, which is what byte-identity requires.
+
+The cost is honest and small: `--consensus` keeps one external binary. It costs
+nothing *relative to the reference*, which needs the same binary — and nobody
+runs draft-only consensus today anyway, because `--consensus` without a polisher
+crashes (*Finding 4*). Anyone using `--consensus` in practice already needs
+medaka or racon.
+
+`rust/tests/spoa_oracle.rs` is kept as the record of the rejected candidate and
+as a harness for the next one: wire a candidate's `consensus(&seqs, &quals)` into
+it and run `cargo test --test spoa_oracle -- --ignored`. The remaining options,
+in the order they are worth trying:
+
+1. **`spoa`/`spoa-sys` bindings** — identical by construction, at the cost of a
+   C++ toolchain. The only option that is both exact and dependency-free at run
+   time.
+2. **A native reimplementation**, validated against this oracle. Tractable and
+   checkable rather than a leap, but a real project.
+3. **Chase `spoars`' remaining 1–7 bp.** It is now close enough that the
+   difference is probably one tie-break or one traversal rule. Worth an hour
+   before option 2, not worth a week.
+
+## The aligners## The aligners
 
 Three call sites, three different problems.
 
