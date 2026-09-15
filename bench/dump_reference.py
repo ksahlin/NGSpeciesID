@@ -306,9 +306,15 @@ def dump_identity(args, out):
     Both orientations are recorded, not just the max, because the port has to
     get the reverse complement right and `max()` hides which side won.
 
+    THE SEQUENCES ARE RECORDED TOO. An earlier version wrote only the lengths
+    and the three identities, which is enough to read but not enough to REPLAY:
+    a port cannot be checked against a number whose input it does not have. The
+    centers are a few hundred bytes each and there are a handful of pairs, so
+    the cost is nothing.
+
     Format, per call:
 
-        IDENT\t<len(seq)>\t<len(seq2)>\t<identity_fw>\t<identity_rc>\t<max>
+        IDENT\t<identity_fw>\t<identity_rc>\t<max>\t<seq>\t<seq2>
     """
     from modules import consensus as _cons
 
@@ -326,8 +332,8 @@ def dump_identity(args, out):
             id_rc = (len(a1) - sum(1 for x, y in zip(a1, a2) if x != y)) / float(len(a1))
             b1, b2, _c, _t, _s = real_pa(seq, seq2)
             id_fw = (len(b1) - sum(1 for x, y in zip(b1, b2) if x != y)) / float(len(b1))
-            out.write("IDENT\t{0}\t{1}\t{2!r}\t{3!r}\t{4!r}\n".format(
-                len(seq), len(seq2), id_fw, id_rc, res))
+            out.write("IDENT\t{0!r}\t{1!r}\t{2!r}\t{3}\t{4}\n".format(
+                id_fw, id_rc, res, seq, seq2))
             state["n"] += 1
         return res
 

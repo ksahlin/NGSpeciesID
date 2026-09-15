@@ -15,6 +15,7 @@ mod align;
 mod blockalign;
 mod cli;
 mod cluster;
+mod consensus;
 mod fastq;
 mod minimizers;
 mod p_emp;
