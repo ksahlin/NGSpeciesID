@@ -354,10 +354,14 @@ def dump_barcode(args, out):
     used would make a port that gets the ordering wrong look correct whenever
     the first two happen to coincide.
 
+    THE TARGET IS RECORDED, not just its length. The earlier version wrote
+    `len(target)`, which is enough to read and not enough to replay -- the same
+    mistake the identity dump made. The windows are `--trim_window` bases each,
+    so the cost is small.
+
     Format, per call:
 
-        EDLIB\t<primer_acc>\t<primer_seq>\t<len(window)>\t<edit_distance>\t<loc0_start,loc0_end;loc1_start,loc1_end;...>
-        CUT\t<c_id>\t<cut_start>\t<cut_end>\t<len_before>\t<len_after>
+        EDLIB\t<primer_seq>\t<target>\t<k>\t<edit_distance>\t<loc0_start,loc0_end;...>
     """
     from modules import barcode_trimmer as _bt
 
@@ -370,8 +374,8 @@ def dump_barcode(args, out):
         res = real_align(query, target, **kw)
         if kw.get("mode") == "HW" and not (args.max_calls and state["n"] >= args.max_calls):
             locs = res.get("locations") or []
-            out.write("EDLIB\t{0}\t{1}\t{2}\t{3}\n".format(
-                query, len(target), res.get("editDistance"),
+            out.write("EDLIB\t{0}\t{1}\t{2}\t{3}\t{4}\n".format(
+                query, target, kw.get("k"), res.get("editDistance"),
                 ";".join("{0},{1}".format(a, b) for a, b in locs)))
             state["n"] += 1
         return res
