@@ -34,6 +34,7 @@ mod pyround;
 mod sorting;
 mod sweep;
 mod text;
+mod write_fastq;
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -91,19 +92,9 @@ fn main() -> ExitCode {
             match pipeline::run(&args) {
                 pipeline::Outcome::Done => ExitCode::SUCCESS,
                 pipeline::Outcome::Failed(code) => ExitCode::from(code as u8),
-                pipeline::Outcome::Incomplete(stage) => not_implemented(stage),
             }
         }
-        cli::Outcome::WriteFastq(wf) => {
-            // Reading the payload here keeps it honest: the fields are the ones
-            // the stage will need, and an unread struct is a struct nobody has
-            // checked against the reference.
-            if wf.clusters.is_none() {
-                eprintln!("Error: write_fastq needs --clusters.");
-                return ExitCode::from(1);
-            }
-            not_implemented("write_fastq")
-        }
+        cli::Outcome::WriteFastq(wf) => ExitCode::from(write_fastq::run(&wf) as u8),
     }
 }
 

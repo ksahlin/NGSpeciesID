@@ -244,6 +244,157 @@ pub fn form_draft_consensus(
     Ok(centers)
 }
 
+/// `barcode_trimmer.read_barcodes`: the primer file, plus each primer's reverse
+/// complement.
+///
+/// Two behaviours reproduced because both are observable and neither is
+/// obviously intended (*Finding 16*):
+///
+/// * **The fasta description stays in the key.** `readfq` returns the whole
+///   header, so the committed primer file's `>COIF-ALT ` — with a trailing
+///   space — yields the key `"COIF-ALT _fw"`. It reaches only log output today.
+/// * **Only the reverse complement is upper-cased.** `seq.strip()` is stored as
+///   written for the `_fw` entry while the `_rc` is built from `seq.upper()`. A
+///   lowercase primer file therefore gets a lowercase forward primer and an
+///   uppercase reverse complement — and the IUPAC equality table is
+///   uppercase-only, so ambiguity codes stop matching in one direction. The
+///   committed file is uppercase, so this is unexercised.
+///
+/// Insertion order is preserved: the reference iterates this dict, and although
+/// the consumer takes a max and a min over all hits — so order cannot change the
+/// answer — an order-dependent container here would be a trap for later.
+pub fn read_barcodes(records: &[(String, String)]) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for (acc, seq) in records {
+        out.push((format!("{acc}_fw"), seq.trim().to_string()));
+    }
+    // A second pass over the ORIGINAL list, as the reference's
+    // `for acc, seq in list(barcodes.items())` does -- it snapshots before
+    // inserting, so the reverse complements are not themselves reversed.
+    let fw: Vec<(String, String)> = out.clone();
+    for (acc, seq) in &fw {
+        let base = &acc[..acc.len() - 3]; // drop "_fw"
+        out.push((
+            format!("{base}_rc"),
+            reverse_complement(&seq.to_uppercase()),
+        ));
+    }
+    out
+}
+
+/// `barcode_trimmer.get_universal_tails`.
+///
+/// Note the naming: the two given literals are `1_F_fw` and `2_R_rc`, and their
+/// reverse complements become `1_F_rc` and `2_R_fw`. So `2_R`'s "forward" entry
+/// is the reverse complement of the literal, not the literal.
+pub fn universal_tails() -> Vec<(String, String)> {
+    let f_fw = "TTTCTGTTGGTGCTGATATTGC";
+    let r_rc = "ACTTGCCTGTCGCTCTATCTTC";
+    vec![
+        ("1_F_fw".to_string(), f_fw.to_string()),
+        ("2_R_rc".to_string(), r_rc.to_string()),
+        ("1_F_rc".to_string(), reverse_complement(f_fw)),
+        ("2_R_fw".to_string(), reverse_complement(r_rc)),
+    ]
+}
+
+/// One primer hit: the barcode's name and the `locations[0]` the reference reads.
+struct BarcodeHit {
+    start: usize,
+    stop: usize,
+}
+
+/// `find_barcode_locations`: every barcode with a hit, at its FIRST location.
+fn find_barcode_locations(
+    window: &str,
+    barcodes: &[(String, String)],
+    primer_max_ed: i64,
+) -> Vec<BarcodeHit> {
+    let mut out = Vec::new();
+    for (_acc, primer) in barcodes {
+        let r = crate::edlib::align_hw(
+            primer.as_bytes(),
+            window.as_bytes(),
+            primer_max_ed,
+            crate::edlib::IUPAC_EQUALITIES,
+        );
+        // `if locations:` -- a hit is a non-empty list, which edlib gives only
+        // when the distance is within k.
+        if let Some(loc) = r.first_location() {
+            out.push(BarcodeHit {
+                start: loc.start,
+                stop: loc.end,
+            });
+        }
+    }
+    out
+}
+
+/// `barcode_trimmer.remove_barcodes`: trim each center in place, and report
+/// whether anything changed.
+///
+/// The arithmetic is the reference's and it is asymmetric:
+///
+/// * the **start** cut is the **latest** `stop` among hits in the leading
+///   window — so overlapping primers all get removed;
+/// * the **end** cut is derived from the **earliest** `start` among hits in the
+///   trailing window, as `len(center) - (trim_window - earliest_hit)`.
+///
+/// `trim_window` halves to `len(center) / 2` when `2 * --trim_window` exceeds the
+/// center, so the two windows never overlap.
+pub fn remove_barcodes(
+    centers: &mut [Center],
+    barcodes: &[(String, String)],
+    trim_window: i64,
+    primer_max_ed: i64,
+) -> bool {
+    let mut updated = false;
+    for center in centers.iter_mut() {
+        let n = center.seq.len();
+        let tw = if 2 * trim_window as usize > n {
+            n / 2
+        } else {
+            trim_window as usize
+        };
+        if tw == 0 {
+            continue;
+        }
+        let head = &center.seq[..tw.min(n)];
+        let tail = &center.seq[n.saturating_sub(tw)..];
+
+        let mut cut_start = 0usize;
+        for h in find_barcode_locations(head, barcodes, primer_max_ed) {
+            if h.stop > cut_start {
+                cut_start = h.stop;
+            }
+        }
+        let mut cut_end = n;
+        let hits_end = find_barcode_locations(tail, barcodes, primer_max_ed);
+        if !hits_end.is_empty() {
+            let mut earliest = n;
+            for h in &hits_end {
+                if h.start < earliest {
+                    earliest = h.start;
+                }
+            }
+            // `len(center) - (trim_window - earliest_hit)`, where trim_window is
+            // the possibly-halved one.
+            cut_end = n - (tw - earliest.min(tw));
+        }
+        if cut_start > 0 || cut_end < n {
+            // Python slicing clamps; an inverted range yields "".
+            let (a, b) = (cut_start.min(n), cut_end.min(n));
+            center.seq = if a < b {
+                center.seq[a..b].to_string()
+            } else {
+                String::new()
+            };
+            updated = true;
+        }
+    }
+    updated
+}
+
 /// Which polisher, if any. The reference's two flags are mutually exclusive in
 /// argparse, and `--consensus` with neither is *Finding 4*'s crash — rejected by
 /// `cli::validate` before this stage runs.
@@ -271,6 +422,216 @@ impl Polisher {
             Polisher::Racon => "racon_cl_id_",
         }
     }
+}
+
+/// `polish_sequences`: write each center's draft and reads, then polish.
+///
+/// Writes, per surviving center:
+///
+/// * `consensus_reference_<c_id>.fasta` — the draft, with a header naming the
+///   cluster and its **`total_supporting_reads`**, which is the count
+///   `detect_reverse_complements` may have inflated (*Finding 10*)
+/// * `reads_to_consensus_<c_id>.fastq` — every merged cluster's reads
+/// * `<medaka|racon>_cl_id_<c_id>/` — the polisher's own output tree
+///
+/// and first **deletes** any `consensus_reference_*` and `<polisher>_cl_id_*`
+/// left from a previous run, so a rerun into the same folder does not mix old
+/// and new. That deletion is why the second pass of the re-trim loop does not
+/// accumulate files.
+pub fn polish_sequences(
+    centers: &mut [Center],
+    outfolder: &Path,
+    polisher: Polisher,
+    args: &Args,
+) -> Result<(), String> {
+    // Clear the previous run's output, exactly as the reference's two glob
+    // loops do. Note it removes `consensus_reference_*` -- every polisher's --
+    // but only its OWN `<polisher>_cl_id_*`, so switching --racon to --medaka in
+    // the same folder leaves the racon directories behind. Faithful.
+    if let Ok(entries) = std::fs::read_dir(outfolder) {
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.starts_with(polisher.dir_prefix()) {
+                let _ = std::fs::remove_dir_all(e.path());
+            } else if name.starts_with("consensus_reference_") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+
+    for center in centers.iter_mut() {
+        let c_id = center.c_id;
+        let draft = outfolder.join(format!("consensus_reference_{c_id}.fasta"));
+        std::fs::write(
+            &draft,
+            format!(
+                ">consensus_cl_id_{c_id}_total_supporting_reads_{}\n{}\n",
+                center.nr_reads, center.seq
+            ),
+        )
+        .map_err(|e| format!("cannot write {}: {e}", draft.display()))?;
+
+        // Every merged cluster's reads, in the order the files were merged.
+        //
+        // The reference builds a DICT keyed by accession per file, so a
+        // duplicate accession within one file collapses -- and then iterates it
+        // in insertion order. Reproduced with an order-preserving de-duplication
+        // per file, because the fastq is handed to the polisher and its order
+        // reaches racon's output.
+        let reads_file = outfolder.join(format!("reads_to_consensus_{c_id}.fastq"));
+        let mut body = String::new();
+        for src in &center.reads {
+            let text = std::fs::read_to_string(src)
+                .map_err(|e| format!("cannot read {}: {e}", src.display()))?;
+            let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut order: Vec<(String, String, String)> = Vec::new();
+            crate::fastq::for_each(text.split_inclusive('\n'), |r| {
+                let acc = r.name.clone();
+                if seen.insert(acc.clone()) {
+                    order.push((acc, r.seq.clone(), r.qual.clone().unwrap_or_default()));
+                }
+            });
+            for (acc, seq, qual) in order {
+                // `acc.split()[0]` -- truncated at the first whitespace, and
+                // ONLY here. Every other writer keeps the whole accession.
+                let short = acc.split_whitespace().next().unwrap_or("");
+                body.push_str(&format!("@{short}\n{seq}\n+\n{qual}\n"));
+            }
+        }
+        std::fs::write(&reads_file, &body)
+            .map_err(|e| format!("cannot write {}: {e}", reads_file.display()))?;
+
+        let dir = outfolder.join(format!("{}{c_id}", polisher.dir_prefix()));
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+
+        let polished = match polisher {
+            Polisher::Racon => run_racon(&reads_file, &draft, &dir, args.racon_iter)?,
+            Polisher::Medaka => run_medaka(&reads_file, &draft, &dir, args)?,
+        };
+        center.seq = polished;
+    }
+    Ok(())
+}
+
+/// Second line of a fasta or fastq, which is what the reference reads back from
+/// every polisher: `cf.readlines()[1].strip()`.
+fn second_line(path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    text.lines().nth(1).map(|l| l.trim().to_string())
+}
+
+/// `run_racon`: `--racon_iter` rounds of minimap2 + racon, each round polishing
+/// the previous round's output.
+fn run_racon(reads: &Path, draft: &Path, dir: &Path, racon_iter: i64) -> Result<String, String> {
+    let mut center_file = draft.to_path_buf();
+    for i in 0..racon_iter.max(0) {
+        let paf = dir.join(format!("read_alignments_it_{i}.paf"));
+        let out = dir.join(format!("racon_polished_it_{i}.fasta"));
+        // The captured stderr files carry timings, so they are NOT in the
+        // byte-identity contract -- the harness excludes them. They are still
+        // written, because the reference writes them and their absence would be
+        // a missing file.
+        run_capturing(
+            "minimap2",
+            &[
+                "-x",
+                "map-ont",
+                &center_file.to_string_lossy(),
+                &reads.to_string_lossy(),
+            ],
+            &paf,
+            &dir.join(format!("mm2_stderr_it_{i}.txt")),
+        )?;
+        run_capturing(
+            "racon",
+            &[
+                &reads.to_string_lossy(),
+                &paf.to_string_lossy(),
+                &center_file.to_string_lossy(),
+            ],
+            &out,
+            &dir.join(format!("racon_stderr_it_{i}.txt")),
+        )?;
+        center_file = out;
+    }
+    let final_path = dir.join("consensus.fasta");
+    std::fs::copy(&center_file, &final_path)
+        .map_err(|e| format!("cannot write {}: {e}", final_path.display()))?;
+    second_line(&final_path).ok_or_else(|| format!("{} has no sequence", final_path.display()))
+}
+
+/// `run_medaka`: one `medaka_consensus` call, then read back whichever of
+/// `consensus.fasta` / `consensus.fastq` it produced.
+fn run_medaka(reads: &Path, draft: &Path, dir: &Path, args: &Args) -> Result<String, String> {
+    let mut argv: Vec<String> = vec![
+        "-i".into(),
+        reads.to_string_lossy().into_owned(),
+        "-d".into(),
+        draft.to_string_lossy().into_owned(),
+        "-o".into(),
+        dir.to_string_lossy().into_owned(),
+        // Hard-coded "1" in the reference, NOT --t. A --t 8 run still polishes
+        // single-threaded.
+        "-t".into(),
+        "1".into(),
+    ];
+    if !args.medaka_model.is_empty() {
+        argv.push("-m".into());
+        argv.push(args.medaka_model.clone());
+    }
+    if args.medaka_fastq {
+        argv.push("-q".into());
+    }
+    let refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+    run_capturing(
+        "medaka_consensus",
+        &refs,
+        &dir.join("stdout.txt"),
+        &dir.join("stderr.txt"),
+    )?;
+    // "consider all output formats for compatibility with all Medaka versions",
+    // fasta first.
+    for name in ["consensus.fasta", "consensus.fastq"] {
+        let p = dir.join(name);
+        if p.is_file() {
+            if let Some(s) = second_line(&p) {
+                return Ok(s);
+            }
+        }
+    }
+    // The reference's `assert centers[i][2], "Medaka consensus sequence not found"`.
+    Err(format!(
+        "medaka produced no consensus in {} (looked for consensus.fasta and consensus.fastq)",
+        dir.display()
+    ))
+}
+
+/// Run a command, sending stdout and stderr to the given files.
+fn run_capturing(prog: &str, args: &[&str], stdout: &Path, stderr: &Path) -> Result<(), String> {
+    let out = std::fs::File::create(stdout)
+        .map_err(|e| format!("cannot write {}: {e}", stdout.display()))?;
+    let err = std::fs::File::create(stderr)
+        .map_err(|e| format!("cannot write {}: {e}", stderr.display()))?;
+    let status = std::process::Command::new(prog)
+        .args(args)
+        .stdout(out)
+        .stderr(err)
+        .status()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                format!("{prog} not found on PATH")
+            } else {
+                format!("could not run {prog}: {e}")
+            }
+        })?;
+    if !status.success() {
+        return Err(format!(
+            "{prog} failed ({status}); see {}",
+            stderr.display()
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

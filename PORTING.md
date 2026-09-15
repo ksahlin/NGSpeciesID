@@ -203,6 +203,9 @@ that wrote it.
 | **the clustering engine, `--t 1`** | **done, byte-identical on both corpora** | carried across from isONclust with four deliberate changes; `--symmetric_map_align_thresholds` written from scratch |
 | **`--t > 1`** | **done, byte-identical on both corpora** | `parallelize.rs`, including every per-iteration `<n>/pre_clusters.csv` and `<n>/cluster_origins.csv`. The batch counts, the merge walk and the iteration count all match |
 | **`--m`/`--s`, `--top_reads`, `--sample_size`** | **done, byte-identical on both corpora** | `pyrandom.rs` reproduces CPython's MT19937 and `random.sample`'s two branches; `tests/pyrandom_oracle.rs` replays 64 recorded draws, both branches, 6 seeds including a negative one and two above 2³² |
+| **`--consensus`** | **done, byte-identical on both corpora** | spoa **linked** (10/10), RC detection (12/12 recorded identity calls), edlib HW (96/96 recorded calls), the trimming arithmetic, and the medaka and racon drivers with the re-trim loop |
+| **`write_fastq`** | **done, byte-identical on both corpora** | including *Finding 6*: it creates `0.fastq`, fails the first lookup, and leaves a zero-byte file. The goldens record exactly that |
+| **THE PORT IS FEATURE-COMPLETE** | **55 of 55 output cases, both corpora** | every case in `bench/cases.tsv`. See *Where the port stands* |
 | stage oracles | **written and exercised on both corpora; the replay half waits for the port** | `bench/dump_reference.py` covers six stages, three of them new here. *Finding 25* has the coverage counts |
 | corpora | **done, 2 committed, both measured for discriminating power** | *The corpora*, *Finding 19* |
 | case matrix swept on both corpora | **done** | 24 cases; `Supplementary_File1_reads.fastq` gives 19 distinct results and 1 unintended collision, `sample_h1.fastq` gives 12 and 8 |

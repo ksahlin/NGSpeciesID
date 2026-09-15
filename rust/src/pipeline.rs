@@ -7,9 +7,8 @@
 //! 3. load the empirical probability table and cluster
 //! 4. write the output, and optionally form consensus sequences
 //!
-//! **Only step 1 exists so far.** The rest returns `Incomplete`, which `main`
-//! turns into exit 70 — deliberately not one of the reference's own codes, so a
-//! stage that is missing cannot be mistaken for a stage that agrees.
+//! **All four exist.** `write_fastq` is the only part of the reference still
+//! missing, and it is a separate subcommand that never enters this module.
 //!
 //! WHAT IS PRINTED, AND WHERE
 //! --------------------------
@@ -34,19 +33,20 @@
 //! * the `logging.error` pair when `--q` filters every read.
 
 use crate::cli::Args;
-use crate::{blockalign, fastq, p_emp, packed, parallelize, pyfloat, pyrandom, sorting, sweep};
+use crate::{
+    blockalign, consensus, fastq, p_emp, packed, parallelize, pyfloat, pyrandom, sorting, sweep,
+};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::path::{Path, PathBuf};
 
 /// How far the pipeline got.
+///
+/// There is no longer an `Incomplete` variant: every stage of `main()` is
+/// implemented. `write_fastq` is the one thing left, and it is a separate
+/// subcommand that never enters this module.
 pub enum Outcome {
-    /// Ran to completion. Nothing constructs this yet -- the last stage is not
-    /// written -- but `main` already maps it to exit 0, so the day it is
-    /// constructed nothing else has to change.
-    #[allow(dead_code)]
+    /// Ran to completion.
     Done,
-    /// A stage that is not written yet. `main` maps this to exit 70.
-    Incomplete(&'static str),
     /// The reference fails here too, with this exit code. The message has
     /// already been written to stderr.
     Failed(i32),
@@ -80,17 +80,179 @@ pub fn run(args: &Args) -> Outcome {
         Ok(n) => n,
     };
 
-    match cluster_stage(args, &paths, sorted_count) {
+    let clustered = match cluster_stage(args, &paths, sorted_count) {
+        Err(code) => return Outcome::Failed(code),
+        Ok(c) => c,
+    };
+    eprintln!(
+        "Finished Clustering: {} clusters formed",
+        clustered.nontrivial
+    );
+
+    if !args.consensus {
+        return Outcome::Done;
+    }
+    match consensus_stage(args, &paths, &clustered) {
         Err(code) => Outcome::Failed(code),
-        Ok(nontrivial) => {
-            if args.consensus {
-                return Outcome::Incomplete("consensus");
+        Ok(()) => Outcome::Done,
+    }
+}
+
+/// What the clustering stage hands the consensus stage.
+pub struct Clustered {
+    /// Clusters with more than one read -- the number reported as "formed".
+    pub nontrivial: usize,
+    /// `(c_id, member accessions)` in the reference's walk order:
+    /// `(size, representative score)` descending.
+    ///
+    /// `c_id` is the read's **ordinal in sorted.fastq**, which is what the
+    /// reference uses and what ends up in `consensus_reference_<c_id>.fasta`.
+    /// Members are in the cluster's STORED order -- the sweep's insertion
+    /// order, not the score-descending order `final_clusters.tsv` uses.
+    pub clusters: Vec<(usize, Vec<String>)>,
+    /// The read count `--abundance_ratio` is applied to: the POST-subsample
+    /// count, not the input's (*Finding 20*).
+    pub nr_reads: usize,
+}
+
+/// Step 4: `--consensus`.
+///
+/// The reference's order, which the re-trim loop makes less obvious than it
+/// looks:
+///
+/// 1. `form_draft_consensus`
+/// 2. trim, if a primer file or `--remove_universal_tails` was given
+/// 3. `detect_reverse_complements`
+/// 4. `polish_sequences`
+/// 5. **trim again**, and if that changed anything, redo 3 and 4
+///
+/// The final count reported is `len(centers_filtered)` — the output of step 3,
+/// not step 4 — which matters only in that the two are the same length.
+fn consensus_stage(args: &Args, paths: &Paths, clustered: &Clustered) -> Result<(), i32> {
+    eprintln!("Starting Consensus creation and polishing");
+    let outfolder = Path::new(args.outfolder.as_deref().expect("validated"));
+
+    // `int(args.abundance_ratio * len(read_array))`. Truncates, so below ten
+    // reads the default 0.1 gives a cutoff of 0 and every cluster qualifies,
+    // singletons included (*Finding 20*).
+    let abundance_cutoff = (args.abundance_ratio * clustered.nr_reads as f64) as usize;
+
+    // `tempfile.mkdtemp()`: the per-cluster read files live outside --outfolder
+    // and are removed at the end, so they are not part of the output contract.
+    let work_dir = match tempdir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("Error: cannot create a temporary directory: {e}");
+            return Err(1);
+        }
+    };
+
+    // Every read in sorted.fastq, by accession. The reference slurps the same
+    // dict; the centers need arbitrary lookup, not a stream.
+    let mut by_acc: FxHashMap<String, (String, String)> = FxHashMap::default();
+    if let Err(e) = fastq::for_each_file(&paths.sorted, |r| {
+        by_acc.insert(r.name, (r.seq, r.qual.unwrap_or_default()));
+    }) {
+        eprintln!("Error: cannot read {}: {e}", paths.sorted.display());
+        return Err(1);
+    }
+    let read_of = |acc: &str| by_acc.get(acc).cloned();
+
+    let mut centers = match consensus::form_draft_consensus(
+        &clustered.clusters,
+        &read_of,
+        &work_dir,
+        abundance_cutoff,
+        args.max_seqs_for_consensus,
+    ) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprintln!("Error: {msg}");
+            let _ = std::fs::remove_dir_all(&work_dir);
+            return Err(1);
+        }
+    };
+
+    // The barcodes, if any. Read once and reused by both trim passes, as the
+    // reference does.
+    let barcodes = match load_barcodes(args) {
+        Ok(b) => b,
+        Err(msg) => {
+            eprintln!("Error: {msg}");
+            let _ = std::fs::remove_dir_all(&work_dir);
+            return Err(1);
+        }
+    };
+    if let Some(b) = &barcodes {
+        consensus::remove_barcodes(&mut centers, b, args.trim_window, args.primer_max_ed);
+    }
+
+    let polisher = consensus::Polisher::of(args).expect("cli::validate requires one");
+    let mut filtered = consensus::detect_reverse_complements(centers, args.rc_identity_threshold);
+    if let Err(msg) = consensus::polish_sequences(&mut filtered, outfolder, polisher, args) {
+        eprintln!("Error: {msg}");
+        let _ = std::fs::remove_dir_all(&work_dir);
+        return Err(1);
+    }
+
+    // The second trim, and the redo it can trigger. Commit 5463966 added the
+    // `if centers_updated` guard so medaka is not run twice for nothing.
+    if let Some(b) = &barcodes {
+        let updated =
+            consensus::remove_barcodes(&mut filtered, b, args.trim_window, args.primer_max_ed);
+        if updated {
+            filtered = consensus::detect_reverse_complements(filtered, args.rc_identity_threshold);
+            if let Err(msg) = consensus::polish_sequences(&mut filtered, outfolder, polisher, args)
+            {
+                eprintln!("Error: {msg}");
+                let _ = std::fs::remove_dir_all(&work_dir);
+                return Err(1);
             }
-            // The second and last line a default run prints.
-            eprintln!("Finished Clustering: {nontrivial} clusters formed");
-            Outcome::Done
         }
     }
+
+    let _ = std::fs::remove_dir_all(&work_dir);
+    eprintln!("Finished Consensus creation: {} created", filtered.len());
+    Ok(())
+}
+
+/// `--primer_file` or `--remove_universal_tails`, or neither. argparse makes
+/// them mutually exclusive.
+fn load_barcodes(args: &Args) -> Result<Option<Vec<(String, String)>>, String> {
+    if args.remove_universal_tails {
+        return Ok(Some(consensus::universal_tails()));
+    }
+    if args.primer_file.is_empty() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&args.primer_file)
+        .map_err(|e| format!("cannot read {}: {e}", args.primer_file))?;
+    let mut records: Vec<(String, String)> = Vec::new();
+    fastq::for_each(text.split_inclusive('\n'), |r| {
+        records.push((r.name.clone(), r.seq.clone()));
+    });
+    Ok(Some(consensus::read_barcodes(&records)))
+}
+
+/// `tempfile.mkdtemp()`. The path varies per run and reaches no output file.
+fn tempdir() -> std::io::Result<PathBuf> {
+    let base = std::env::temp_dir();
+    for _ in 0..64 {
+        let n: u64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as u64)
+            .unwrap_or(0)
+            ^ (std::process::id() as u64) << 32;
+        let p = base.join(format!("ngspeciesid{n:x}"));
+        match std::fs::create_dir(&p) {
+            Ok(()) => return Ok(p),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::other(
+        "could not create a temporary directory",
+    ))
 }
 
 /// The score the sorting stage appended, recovered with
@@ -115,9 +277,10 @@ pub fn strip_score(acc: &str) -> &str {
 
 /// Steps 2 and 3: filter, subsample, then cluster and write the output.
 ///
-/// Returns the number of clusters with more than one read, which is the number
-/// the reference reports as "clusters formed".
-fn cluster_stage(args: &Args, paths: &Paths, sorted_count: usize) -> Result<usize, i32> {
+/// Returns what the consensus stage needs: the cluster walk order, the member
+/// accessions, the post-subsample read count, and the number of non-trivial
+/// clusters the reference reports as "clusters formed".
+fn cluster_stage(args: &Args, paths: &Paths, sorted_count: usize) -> Result<Clustered, i32> {
     // The reference re-reads sorted.fastq rather than reusing anything from the
     // sort, and recovers the score by parsing it back out of the accession. So
     // the accession the sweep sees is the one WITH the score suffix, and the
@@ -293,7 +456,10 @@ fn cluster_stage(args: &Args, paths: &Paths, sorted_count: usize) -> Result<usiz
             skipped_short: r.skipped_short,
             times: r.times,
         };
-        return write_output(args, paths, &reads, &ordinal_of, &res);
+        let nr_reads = reads.len();
+        let mut out = write_output(args, paths, &reads, &ordinal_of, &res)?;
+        out.nr_reads = nr_reads;
+        return Ok(out);
     }
 
     let clusters = sweep::OrderedClusters::default();
@@ -301,7 +467,10 @@ fn cluster_stage(args: &Args, paths: &Paths, sorted_count: usize) -> Result<usiz
     let db = crate::cluster::MinimizerDatabase::default();
     let res = sweep::reads_to_clusters(clusters, reps, &reads, db, 1, &table, params);
 
-    write_output(args, paths, &reads, &ordinal_of, &res)
+    let nr_reads = reads.len();
+    let mut out = write_output(args, paths, &reads, &ordinal_of, &res)?;
+    out.nr_reads = nr_reads;
+    Ok(out)
 }
 
 /// Step 4: `final_clusters.tsv` and `final_cluster_origins.tsv`.
@@ -316,7 +485,7 @@ fn write_output(
     reads: &[sweep::SweepRead],
     ordinal_of: &[usize],
     res: &sweep::SweepResult,
-) -> Result<usize, i32> {
+) -> Result<Clustered, i32> {
     let clusters = &res.clusters;
     let representatives = &res.representatives;
 
@@ -344,6 +513,11 @@ fn write_output(
     let mut clusters_out = String::new();
     let mut origins_out = String::new();
     let mut nontrivial = 0usize;
+    // The walk order and member lists the consensus stage needs. Members stay in
+    // the cluster's STORED order here, NOT the score-descending order written to
+    // final_clusters.tsv -- `form_draft_consensus` iterates the stored one, and
+    // the order reads enter a POA graph changes the consensus.
+    let mut walk: Vec<(usize, Vec<String>)> = Vec::with_capacity(order.len());
     for (output_cl_id, c_id) in order.iter().enumerate() {
         let rep = &representatives[c_id];
         origins_out.push_str(&format!(
@@ -378,6 +552,28 @@ fn write_output(
         if clusters.map[c_id].len() > 1 {
             nontrivial += 1;
         }
+        walk.push((
+            // The ORIGINAL ordinal in sorted.fastq, not the dense index.
+            //
+            // The reference keeps `i` from `enumerate` over all of sorted.fastq
+            // as the cluster id, so its ids are sparse after `--m`/`--s` or a
+            // subsample drops something. An earlier comment here claimed that
+            // only reached the third sort key, where relative order is all that
+            // matters -- and that was WRONG: the consensus stage puts the id in
+            // a FILENAME, `consensus_reference_<c_id>.fasta`. `cons_sample100`
+            // caught it, writing `..._9.fasta` where the reference writes
+            // `..._31.fasta` with byte-identical content.
+            //
+            // Dense ids stay internal, because the sweep indexes `reads` by
+            // them; `ordinal_of` maps back at the one point it escapes. The
+            // ordering is unaffected either way, since `ordinal_of` is
+            // monotonically increasing.
+            ordinal_of[*c_id],
+            clusters.map[c_id]
+                .iter()
+                .map(|id| reads[*id as usize].acc.to_string())
+                .collect(),
+        ));
     }
 
     let outfolder = Path::new(args.outfolder.as_deref().expect("validated"));
@@ -388,7 +584,12 @@ fn write_output(
         eprintln!("Error: cannot write output: {e}");
         return Err(1);
     }
-    Ok(nontrivial)
+    Ok(Clustered {
+        nontrivial,
+        clusters: walk,
+        // Filled in by the caller, which knows the post-subsample count.
+        nr_reads: 0,
+    })
 }
 
 /// Byte range of each wanted record in sorted.fastq.
