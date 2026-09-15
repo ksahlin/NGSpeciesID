@@ -4,12 +4,18 @@
 //! specification, which is byte-identity with the Python reference in this same
 //! repository, and `bench/README.md` for the harness that checks it.
 //!
-//! **Only the CLI exists so far.** Everything past argument validation exits
-//! `EXIT_NOT_IMPLEMENTED` with one line saying so. That code is deliberately
-//! neither 0, 1 nor 2: those three are the reference's own exit codes, and a
-//! placeholder that returned any of them would let cases pass for the wrong
-//! reason — `bench/equivalence.sh` compares exit codes, and the 15 traceback
-//! cases all want exit 1.
+//! **Every stage exists.** While the port was partial, anything past argument
+//! validation exited `EXIT_NOT_IMPLEMENTED` (70) with one line saying so —
+//! deliberately neither 0, 1 nor 2, because those three are the reference's own
+//! exit codes and a placeholder returning one of them would let cases pass for
+//! the wrong reason: `bench/equivalence.sh` compares exit codes, and the 15
+//! traceback cases all want exit 1.
+//!
+//! That placeholder is gone, because nothing can reach it any more. Its absence
+//! is the signal — as is `pipeline::Outcome` having no `Incomplete` variant. If
+//! a future stage is stubbed out, bring the constant back rather than returning
+//! 1: a stub that exits 1 is indistinguishable from a correctly reproduced
+//! failure, and the harness would call it a pass.
 
 mod align;
 mod blockalign;
@@ -38,11 +44,6 @@ mod write_fastq;
 
 use std::io::Write;
 use std::process::ExitCode;
-
-/// Not 0, 1 or 2. See the module docs: a placeholder must not be mistakable for
-/// the reference's own exit codes. 70 is `EX_SOFTWARE` from sysexits.h, which
-/// is as close to "this program is incomplete" as the convention gets.
-pub const EXIT_NOT_IMPLEMENTED: u8 = 70;
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -98,29 +99,10 @@ fn main() -> ExitCode {
     }
 }
 
-fn not_implemented(what: &str) -> ExitCode {
-    eprintln!(
-        "NGSpeciesID (Rust port): {what} is not implemented yet. \
-         Arguments parsed and validated successfully."
-    );
-    ExitCode::from(EXIT_NOT_IMPLEMENTED)
-}
-
 /// `print!` to a closed stdout is a silent no-op unless the flush is checked,
 /// and `--help | head -1` closes it. The reference dies with a BrokenPipeError
 /// traceback there; exiting quietly is the better behaviour and the difference
 /// is not in any golden.
 fn flush_stdout() {
     let _ = std::io::stdout().flush();
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn the_not_implemented_code_is_not_one_the_reference_uses() {
-        // 0, 1 and 2 are the reference's exit codes. A placeholder sharing one
-        // of them would make traceback cases "pass" without the port having
-        // implemented anything.
-        assert!(!matches!(super::EXIT_NOT_IMPLEMENTED, 0..=2));
-    }
 }

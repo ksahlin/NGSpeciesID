@@ -140,6 +140,16 @@ pub struct ParallelResult {
     /// out; the caller reports it and exits non-zero, as it did when the writing
     /// lived there.
     pub intermediate_error: Option<String>,
+    /// A representative that is still a six-element tuple, if the merge walk met
+    /// one. See `crate::pipeline::finding_18`.
+    ///
+    /// This is the reference's **third** unpack of that tuple and the earliest
+    /// of the three to fire: `parallelize.py:184` rebuilds `read_array` from the
+    /// merged representatives between iterations, so a `--t > 1` run dies there
+    /// rather than in the output writer, **before a single file is written** —
+    /// no numbered directories, no `final_clusters.tsv`. Measured: the reference
+    /// leaves only `sorted.fastq` and a truncated `logfile.txt`.
+    pub short_rep: Option<usize>,
     pub mapped_passed: usize,
     pub aln_passed: usize,
     pub aln_called: usize,
@@ -201,6 +211,7 @@ pub fn parallel_clustering(
         clusters: OrderedClusters::default(),
         representatives: FxHashMap::default(),
         intermediate_error: None,
+        short_rep: None,
         mapped_passed: 0,
         aln_passed: 0,
         aln_called: 0,
@@ -311,6 +322,22 @@ pub fn parallel_clustering(
                 .expect("scores are finite")
                 .then(a.id.cmp(&b.id))
         });
+
+        // FINDING 18, at `parallelize.py:184`. The reference's list
+        // comprehension unpacks eight elements from every merged representative
+        // and raises `ValueError` on the first six-element one. It sits ABOVE
+        // both the `num_batches == 1` return and `print_intermediate_results`,
+        // so nothing has been written yet and nothing must be: returning here
+        // reproduces an output folder holding only `sorted.fastq`.
+        //
+        // `survivors` is built from the same map and carries `error_rate`
+        // through as `hp_error_rate`, so a `None` here IS that six-element
+        // tuple. It is checked in the sorted order the comprehension iterates,
+        // which does not change the outcome but keeps the two reading alike.
+        if let Some(r) = survivors.iter().find(|r| r.hp_error_rate.is_none()) {
+            out.short_rep = Some(r.id);
+            return out;
+        }
 
         if num_batches == 1 {
             out.clusters = all_clusters;
@@ -455,6 +482,13 @@ fn write_intermediate(
             String::from_utf8_lossy(&seq),
             qual,
             crate::pyfloat::repr(r.score),
+            // `cluster_origins.csv` is the reference's SECOND unpack of the
+            // eight-element tuple (`parallelize.py:101`). It is unreachable
+            // with a six-element one: the merge walk's rebuild at line 184
+            // unpacks every merged representative and runs first, so anything
+            // that would fail here has already stopped the run. Hence NAN
+            // rather than a check -- if this ever prints `nan`, the guard above
+            // it has been moved or removed.
             crate::pyfloat::repr(r.error_rate.unwrap_or(f64::NAN)),
         )
         .map_err(wr)?;

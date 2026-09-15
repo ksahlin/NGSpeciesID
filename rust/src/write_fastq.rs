@@ -23,8 +23,12 @@
 //! `final_clusters.tsv` is a full ONT accession *containing spaces*:
 //!
 //! ```text
-//! 0	c948601e-1bd9-4039-94c5-3d8c741df65f runid=ed1de13 read=4709 ch=45 …
+//! 0<TAB>c948601e-1bd9-4039-94c5-3d8c741df65f runid=ed1de13 read=4709 ch=45 …
 //! ```
+//!
+//! (`<TAB>` spelled out, not a literal tab: the separator being a tab while the
+//! accession contains spaces is the entire finding, and rendered as whitespace
+//! the two are indistinguishable.)
 //!
 //! So `acc` becomes the bare UUID while `reads` is keyed by the whole header,
 //! and the very first lookup raises `KeyError`. Measured on both corpora: the

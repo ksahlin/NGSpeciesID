@@ -369,26 +369,34 @@ cmd_seeds_sample_size() {
 # without giving the divergence its own commit and a note in PORTING.md.
 
 
-# The 44 CLI cases fall into three classes, and keeping them apart is the whole
+# The 45 CLI cases fall into three classes, and keeping them apart is the whole
 # point -- lumping them together would either hide a real failure or produce
-# fifteen permanent red lines that everyone learns to ignore.
+# sixteen permanent red lines that everyone learns to ignore.
 #
-#   EXACT (23)      byte-identical stdout, stderr and exit code. Checkable
-#                   today, before any clustering exists: the argparse errors,
-#                   --help/--version, and the three validation messages that
-#                   fire before main() runs.
-#   TRACEBACK (15)  the reference exits through a Python traceback. Exit code
+#   EXACT (29)      byte-identical stdout, stderr and exit code.
+#   TRACEBACK (16)  the reference exits through a Python traceback. Exit code
 #                   and "says something, and it is not a stack trace" are the
-#                   contract; the text is a deliberate divergence.
-#   PENDING (6)     a valid invocation, so the reference runs the tool. Exactly
-#                   matchable once the stages exist, not before.
+#                   contract; the text is a deliberate divergence. Two of them
+#                   ALSO pin the files left in the output folder -- see
+#                   CLI_CASE_OUTDIR.
+#   PENDING (0)     a valid invocation whose stages the port does not have yet.
 #
-# 23 + 15 + 6 = 44. If that stops adding up, a case was added without being
+# 29 + 16 + 0 = 45. If that stops adding up, a case was added without being
 # classified, and `cmd_cli` says so rather than guessing.
 
 # PENDING: the invocation is valid, so the reference goes on to run the tool.
-# These become exactly matchable once the corresponding stages exist.
-CLI_NEEDS_STAGES=" abbrev_outf ont_over_k k_then_ont isoseq_over_w medaka_no_consensus q_filters_all "
+#
+# EMPTY, and that is the point: this held six cases -- abbrev_outf, ont_over_k,
+# k_then_ont, isoseq_over_w, medaka_no_consensus, q_filters_all -- each a full
+# run of the tool, deferred until the clustering and consensus stages existed.
+# They exist, and all six are byte-identical in stdout, stderr and exit code on
+# both corpora, medaka included. They are EXACT cases now.
+#
+# A pending list that outlives its reason is worse than no list: six cases were
+# printing `info pending` and counting as neither pass nor fail long after they
+# could have been checked. Whatever is added here needs the same scrutiny --
+# re-test the class whenever a stage lands, not only when something fails.
+CLI_NEEDS_STAGES=" "
 
 # TRACEBACK: the reference's stderr is a Python traceback -- fifteen of them,
 # every one a reproduced crash from PORTING.md's exit-code table. A Rust port
@@ -409,7 +417,7 @@ CLI_NEEDS_STAGES=" abbrev_outf ont_over_k k_then_ont isoseq_over_w medaka_no_con
 # also the one place the port is expected to be *better* than the reference: a
 # user who passes --k 9 should be told that --k 9 has no probability table, not
 # handed a KeyError on a tuple of two floats.
-CLI_TRACEBACK=" batch_bogus batch_weighted consensus_no_polisher d_zero exact_f exact_m k_too_big k_too_small kw_gap max_seqs_zero no_outfolder no_trailing_nl use_old_k_mismatch use_old_missing wf_spaces "
+CLI_TRACEBACK=" batch_bogus batch_weighted consensus_no_polisher d_zero exact_f exact_m k_too_big k_too_small kw_gap max_seqs_zero no_outfolder no_trailing_nl use_old_k_mismatch use_old_k_mismatch_t8 use_old_missing wf_spaces "
 TRACEBACK_MAX_LINES=6
 
 # DIVERGENT BY DESIGN, in the sense isONclust's harness used the word: a golden
@@ -418,10 +426,36 @@ TRACEBACK_MAX_LINES=6
 # empty, and the `dropped` subcommand it existed for is replaced by `tools`.
 CLI_DIVERGENT=" "
 
+# A CLI case's SIDE EFFECTS, for the cases where they are the contract.
+#
+# The traceback class compares an exit code and the shape of stderr, and nothing
+# else -- which is right for a case whose only product is a message, and blind
+# for a case that also leaves files behind. `use_old_k_mismatch_t8` is exactly
+# that: the port exited 1 with a perfectly good message while writing three
+# numbered directories and two output files that the reference never writes,
+# because the reference dies one unpack earlier. Exit code and stderr agreed.
+#
+# Set CLI_CASE_OUTDIR before a cli_case call and its output folder is listed --
+# relative path and sha256, sorted -- into the golden, and compared on verify.
+# It is consumed by the call -- `cli_case` clears it on entry and again after the
+# traceback path -- so it never leaks into the next case. Note that a
+# `VAR=x some_function` prefix does NOT self-clear in bash the way it does for an
+# external command; the assignment persists, which is exactly the leak this
+# guards against.
+CLI_CASE_OUTDIR=""
+cli_list_outdir() { # cli_list_outdir <dir> -> "relpath<TAB>sha256" lines, sorted
+  local dir="$1"
+  [[ -d "$dir" ]] || return 0
+  (cd "$dir" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | while IFS= read -r rel; do
+     printf '%s\t%s\n' "$rel" "$(shasum -a 256 "$rel" | cut -d' ' -f1)"
+   done)
+}
+
 cli_case() { # cli_case <name> <args...>
   local name="$1"; shift
   local d="$GOLDEN/cli/$name"
   mkdir -p "$d"
+  local outdir="$CLI_CASE_OUTDIR"; CLI_CASE_OUTDIR=""
   if [[ "$MODE" == "record" ]]; then
     set +e
     "$REF_PYTHON" NGSpeciesID "$@" >"$d/stdout" 2>"$d/stderr"; echo $? >"$d/exit"
@@ -431,7 +465,12 @@ cli_case() { # cli_case <name> <args...>
     # site-packages and of this checkout, so an unscrubbed golden is valid on
     # exactly one machine -- and a dozen of these cases exit through a traceback.
     scrub "$d/stdout" "$d/stderr"
-    ok "recorded cli/$name (exit $(cat "$d/exit"))"
+    if [[ -n "$outdir" ]]; then
+      cli_list_outdir "$outdir" > "$d/files"
+      ok "recorded cli/$name (exit $(cat "$d/exit"), $(wc -l < "$d/files" | tr -d ' ') file(s) left behind)"
+    else
+      ok "recorded cli/$name (exit $(cat "$d/exit"))"
+    fi
   else
     [[ -f "$d/exit" ]] || { bad "no golden for cli/$name -- re-run: equivalence.sh cli record"; return; }
     if [[ "$CLI_NEEDS_STAGES" == *" $name "* ]]; then
@@ -443,7 +482,9 @@ cli_case() { # cli_case <name> <args...>
       return 0
     fi
     if [[ "$CLI_TRACEBACK" == *" $name "* ]]; then
+      CLI_CASE_OUTDIR="$outdir"
       cli_case_traceback "$name" "$d" "$@"
+      CLI_CASE_OUTDIR=""
       return 0
     fi
     set +e
@@ -508,6 +549,15 @@ cli_case_traceback() { # cli_case_traceback <name> <golden dir> <args...>
     && problems+=("stderr is a Rust panic -- no better than the traceback")
   [[ "${lines:-0}" -le "$TRACEBACK_MAX_LINES" ]] \
     || problems+=("stderr is $lines lines, want <= $TRACEBACK_MAX_LINES")
+  # The side effects, when this case records them. A message that is right about
+  # a run that wrote the wrong files is not a pass.
+  if [[ -n "${CLI_CASE_OUTDIR:-}" && -f "$d/files" ]]; then
+    cli_list_outdir "$CLI_CASE_OUTDIR" > "$WORK/files"
+    if ! diff -q "$WORK/files" "$d/files" >/dev/null; then
+      problems+=("output folder differs: $(diff "$d/files" "$WORK/files" | grep -cE '^[<>]') line(s)")
+      diff "$d/files" "$WORK/files" | head -6 | sed 's/^/          files| /' || true
+    fi
+  fi
   if [[ ${#problems[@]} -eq 0 ]]; then
     ok "cli/$name (traceback case: exit $rc, $lines line(s) of message)"
   else
@@ -526,6 +576,7 @@ cmd_cli() {
     bad "no port binary at $PORT_BIN -- nothing to verify yet"
     return
   fi
+  [[ "$MODE" == "verify" ]] && check_bin_fresh
 
   # --- the easy half: things that exit before doing any work ---
   cli_case version      --version
@@ -654,7 +705,24 @@ cmd_cli() {
   "$REF_PYTHON" NGSpeciesID --fastq "$CORPUS" --outfolder "$uo" --t 1 --k 13 --w 20 \
     >/dev/null 2>&1 || true
   if [[ -s "$uo/sorted.fastq" ]]; then
+    CLI_CASE_OUTDIR="$uo"
     cli_case use_old_k_mismatch --use_old_sorted_file --outfolder "$uo" --t 1 --k 25 --w 50
+    # The SAME mismatch at --t 8, which is a different crash site and a
+    # different amount of output. Finding 18 is unpacked in three places; the
+    # merge walk's rebuild (parallelize.py:184) fires EARLIEST, before any file
+    # is written, so this case's contract is "an output folder holding nothing
+    # but sorted.fastq" where the --t 1 case's is "complete records for every
+    # earlier cluster". The port reproduced the --t 1 half and completed the
+    # whole run at --t 8; nothing in the matrix said so until this case existed.
+    #
+    # A fresh folder, seeded from the same sorted.fastq: the --t 1 case above
+    # leaves partial output in $uo, and reusing it would make this case depend
+    # on what ran before it.
+    local uo8="$WORK/uo_kmismatch_t8"
+    rm -rf "$uo8"; mkdir -p "$uo8"
+    cp "$uo/sorted.fastq" "$uo8/sorted.fastq"
+    CLI_CASE_OUTDIR="$uo8"
+    cli_case use_old_k_mismatch_t8 --use_old_sorted_file --outfolder "$uo8" --t 8 --k 25 --w 50
   else
     bad "cli/use_old_k_mismatch: could not produce a sorted.fastq to reuse"
   fi
@@ -930,6 +998,30 @@ cmd_record() {
   info "$n cases -> $GOLDEN/manifest.tsv ($(wc -c < "$GOLDEN/manifest.tsv" | tr -d ' ') bytes)"
 }
 
+# A binary older than the sources reports failures that do not exist.
+#
+# Measured, not hypothetical: a verify run against a binary built before
+# write_fastq landed reported `wf_N0/wf_N2/wf_N10 (exit 70, want 1)` -- 70 being
+# the then-current EXIT_NOT_IMPLEMENTED placeholder. Three convincing FAILs, an
+# hour of looking for a bug in code that was already correct. A harness that can
+# be wrong about the thing it exists to measure is worse than no harness, so
+# this is a hard stop rather than a warning: a warning scrolls past.
+#
+# Set ALLOW_STALE_BIN=1 to test a deliberately older build.
+check_bin_fresh() {
+  [[ "${ALLOW_STALE_BIN:-0}" == "1" ]] && return 0
+  [[ -x "$PORT_BIN" ]] || return 0
+  local newer
+  newer="$(find "$ROOT/rust/src" "$ROOT/rust/tests" "$ROOT/rust/Cargo.toml" "$ROOT/rust/Cargo.lock" \
+             -newer "$PORT_BIN" -type f 2>/dev/null | head -3)"
+  [[ -z "$newer" ]] && return 0
+  bad "$PORT_BIN is OLDER than the sources -- it would report failures that are not real"
+  while IFS= read -r f; do info "  newer: ${f#$ROOT/}"; done <<< "$newer"
+  info "build it, then re-run:"
+  info "  cargo build --release --manifest-path rust/Cargo.toml"
+  exit 1
+}
+
 cmd_verify() {
   echo "==> verifying the port against the goldens"
   check_cases
@@ -940,6 +1032,7 @@ cmd_verify() {
     info "  cargo build --release --manifest-path rust/Cargo.toml"
     return
   fi
+  check_bin_fresh
   while IFS=$'\t' read -r name entry args; do
     [[ "$name" =~ ^# ]] && continue
     [[ -z "${name// }" ]] && continue
@@ -1038,6 +1131,7 @@ cmd_tools() {
     bad "no port binary at $PORT_BIN -- nothing to check yet"
     return 0
   fi
+  check_bin_fresh
   # A shim directory that shadows the real tool with nothing. Putting an empty
   # dir FIRST on PATH does not shadow anything, so each iteration builds a PATH
   # containing only the other tools.
@@ -1304,6 +1398,7 @@ cmd_stage() {
     bad "no port binary at $PORT_BIN"
     return 0
   fi
+  check_bin_fresh
   # The dump-based stages sweep their own (k, w) settings rather than the case
   # matrix, so they get their own header and skip check_cases.
   if [[ "$which" == "minimizers" ]]; then

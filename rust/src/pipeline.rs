@@ -445,6 +445,12 @@ fn cluster_stage(args: &Args, paths: &Paths, sorted_count: usize) -> Result<Clus
             eprintln!("Error: {msg}");
             return Err(1);
         }
+        // Before anything else the caller would do, because the reference dies
+        // here with an empty output folder. See `finding_18`.
+        if let Some(c_id) = r.short_rep {
+            finding_18(c_id);
+            return Err(1);
+        }
         let res = sweep::SweepResult {
             clusters: r.clusters,
             representatives: r.representatives,
@@ -518,8 +524,42 @@ fn write_output(
     // final_clusters.tsv -- `form_draft_consensus` iterates the stored one, and
     // the order reads enter a POA graph changes the consensus.
     let mut walk: Vec<(usize, Vec<String>)> = Vec::with_capacity(order.len());
+    // Set when a representative is still a six-element tuple. See below.
+    let mut short_rep: Option<usize> = None;
     for (output_cl_id, c_id) in order.iter().enumerate() {
         let rep = &representatives[c_id];
+        // FINDING 18, reproduced including the partial output.
+        //
+        // `reads_to_clusters` skips a read whose homopolymer-compressed length
+        // is under `--k` with a bare `continue`, BEFORE the block that grows its
+        // representative from six elements to eight. The read stays its own
+        // cluster, and this loop's
+        //
+        //     read_cl_id, b_i, acc, c_seq, c_qual, score, error_rate, _ = ...
+        //
+        // raises `ValueError: not enough values to unpack (expected 8, got 6)`.
+        // `error_rate == None` here IS that six-element tuple.
+        //
+        // Unreachable in a single run -- the sort stage drops those reads using
+        // the same `--k` -- and two ordinary commands away otherwise:
+        //
+        //     NGSpeciesID --fastq test/sample_h1.fastq --outfolder out --t 1 --k 13 --w 20
+        //     NGSpeciesID --use_old_sorted_file        --outfolder out --t 1 --k 25 --w 50
+        //
+        // Both files are already open and have been written to, and CPython
+        // flushes them at interpreter shutdown, so the run leaves COMPLETE
+        // records for every earlier cluster and nothing for this one: measured
+        // at 310 074 and 61 945 bytes on `sample_h1`. Breaking before appending
+        // anything for this cluster reproduces that byte for byte.
+        //
+        // Writing `nan` instead -- which is what this did, and what
+        // `cli/use_old_k_mismatch` caught -- is strictly worse than crashing:
+        // the run exits 0 and every downstream consumer sees a cluster whose
+        // error rate is not a number.
+        if rep.error_rate.is_none() {
+            short_rep = Some(*c_id);
+            break;
+        }
         origins_out.push_str(&format!(
             "{}\t{}\t{}\t{}\t{}\t{}\n",
             output_cl_id,
@@ -582,6 +622,12 @@ fn write_output(
     if let Err(e) = std::fs::write(&cp, clusters_out).and_then(|_| std::fs::write(&op, origins_out))
     {
         eprintln!("Error: cannot write output: {e}");
+        return Err(1);
+    }
+    // After the partial write, not before: the reference's files carry what it
+    // managed to write before the traceback.
+    if let Some(c_id) = short_rep {
+        finding_18(c_id);
         return Err(1);
     }
     Ok(Clustered {
@@ -846,6 +892,21 @@ fn count_records(p: &Path) -> usize {
     let mut n = 0usize;
     let _ = fastq::for_each_file(p, |_| n += 1);
     n
+}
+
+/// The one-line report for *Finding 18*, shared by the three places the
+/// reference unpacks an eight-element tuple that may hold six.
+///
+/// One line per sentence instead of a `ValueError` traceback, and it names the
+/// cause: `ValueError: not enough values to unpack (expected 8, got 6)` tells a
+/// user nothing about `--use_old_sorted_file`, which is the only way to get here.
+fn finding_18(c_id: usize) {
+    eprintln!(
+        "Error: cluster {c_id} was never processed by the clustering sweep, so it has no\n\
+         homopolymer-compressed error rate. This happens when --use_old_sorted_file reuses a\n\
+         sorted.fastq produced with a smaller --k. Re-sort with the --k you are clustering at,\n\
+         or delete sorted.fastq. See PORTING.md, Finding 18."
+    );
 }
 
 #[cfg(test)]

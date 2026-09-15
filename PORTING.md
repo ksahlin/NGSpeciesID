@@ -183,8 +183,12 @@ The history rewrite is on neither branch. It is a force-push, it is reviewed on 
 
 ## Port status
 
-Nothing is ported yet. This document is the reconnaissance, and it is the deliverable of the session
-that wrote it.
+**The port is feature-complete.** Every stage of the pipeline exists in `rust/` and is checked against
+the reference on both corpora. What remains is not porting: repository slimming, CI, and the corpus
+gaps that four separate findings now point at.
+
+This document began as reconnaissance and was the deliverable of the session that wrote it; the rows
+below were filled in as each stage landed, and the dates are in the commits.
 
 | Stage | State | Verification |
 | --- | --- | --- |
@@ -194,30 +198,32 @@ that wrote it.
 | determinism gate | **done, and it fails twice** | *Finding 1* (`--sample_size`) and *Finding 2* (Python ≤3.11) |
 | interpreter decision | **taken: pin ≥3.12** | same decision as isONclust, same reason. The README recommending 3.11 is *Finding 2* |
 | `--sample_size` decision | **taken: `--seed`, fixed default 0** | *Finding 1*. Commit `04b252f`; verified a no-op on 24 of 24 cases and reproducible through the consensus stage. **The port's one blocker is gone** |
-| CLI contract captured | **done, 44 cases recorded** | `bench/golden/<corpus>/cli/` — exit code, stdout and stderr, scrubbed of paths, timings and traceback line numbers. *The exit-code contract* |
-| output goldens recorded | **done, 51 cases on both corpora** | `bench/golden/<corpus>/manifest.tsv`. Includes every `--consensus` case, both polishers, and the `--t > 1` merge intermediates |
+| CLI contract captured | **done, 45 cases recorded** | `bench/golden/<corpus>/cli/` — exit code, stdout and stderr, scrubbed of paths, timings and traceback line numbers. *The exit-code contract* |
+| output goldens recorded | **done, 55 cases on both corpora** | `bench/golden/<corpus>/manifest.tsv`. Includes every `--consensus` case, both polishers, and the `--t > 1` merge intermediates |
 | goldens are reproducible | **done** | `equivalence.sh stable` records the whole matrix twice and diffs: 191 checks, identical. It found two real defects on the way — *Finding 23* and *Finding 24* |
 | the harness itself is tested | **done** | five deliberately-broken "ports" run against the goldens; see *Has the harness got teeth?* |
-| **CLI parity** | **done for the 23 exact cases, on both corpora** | `equivalence.sh cli verify`: **34 of 39 checkable** — all 23 exact byte-identical, plus 11 of the 15 traceback cases. `clippy -D warnings` and `cargo fmt` clean |
+| **CLI parity** | **done, all 45 cases, on both corpora** | `equivalence.sh cli verify`: **29 exact byte-identical, 16 traceback, 0 pending**. Two of the traceback cases also pin the files left behind. `cli_audit` counts the classes both ways, so a case cannot be added without being classified |
 | **the sorting stage** | **done, byte-identical on both corpora** | `equivalence.sh stage sort`: **52 of 52**. `sorted.fastq` and `logfile.txt` |
 | **the clustering engine, `--t 1`** | **done, byte-identical on both corpora** | carried across from isONclust with four deliberate changes; `--symmetric_map_align_thresholds` written from scratch |
 | **`--t > 1`** | **done, byte-identical on both corpora** | `parallelize.rs`, including every per-iteration `<n>/pre_clusters.csv` and `<n>/cluster_origins.csv`. The batch counts, the merge walk and the iteration count all match |
 | **`--m`/`--s`, `--top_reads`, `--sample_size`** | **done, byte-identical on both corpora** | `pyrandom.rs` reproduces CPython's MT19937 and `random.sample`'s two branches; `tests/pyrandom_oracle.rs` replays 64 recorded draws, both branches, 6 seeds including a negative one and two above 2³² |
 | **`--consensus`** | **done, byte-identical on both corpora** | spoa **linked** (10/10), RC detection (12/12 recorded identity calls), edlib HW (96/96 recorded calls), the trimming arithmetic, and the medaka and racon drivers with the re-trim loop |
 | **`write_fastq`** | **done, byte-identical on both corpora** | including *Finding 6*: it creates `0.fastq`, fails the first lookup, and leaves a zero-byte file. The goldens record exactly that |
-| **THE PORT IS FEATURE-COMPLETE** | **55 of 55 output cases, both corpora** | every case in `bench/cases.tsv`. See *Where the port stands* |
+| **THE PORT IS FEATURE-COMPLETE** | **55 of 55 output cases and every checkable CLI case, both corpora** | every case in `bench/cases.tsv`. Read it with *Verification gaps, now that every stage is ported* — the matrix is one invocation per case, and *Finding 18* is what that misses |
 | stage oracles | **written and exercised on both corpora; the replay half waits for the port** | `bench/dump_reference.py` covers six stages, three of them new here. *Finding 25* has the coverage counts |
 | corpora | **done, 2 committed, both measured for discriminating power** | *The corpora*, *Finding 19* |
 | case matrix swept on both corpora | **done** | 24 cases; `Supplementary_File1_reads.fastq` gives 19 distinct results and 1 unintended collision, `sample_h1.fastq` gives 12 and 8 |
 | repository slimmed | **not started; analysed, and the tooling is in the tree and runs** | `tools/repo-slim/analyze.sh` reports 520.1 MB of 530.8 MB strippable (98.0%), 15 paths, and writes a reviewed `removal-paths.txt`. *Repo hygiene* |
-| clustering engine | **already exists and is verified against this reference** | 12 configurations × 2 corpora, `--t` 1/4/8. *Goal* |
-| `--symmetric_map_align_thresholds` | not started | new logic; visible on the 3 000-read corpus (85 clusters vs 49) and **invisible** on `sample_h1` |
-| `--m`/`--s`/`--sample_size`/`--top_reads` | not started, and no longer blocked | all four are reproducible now. `--sample_size` needs `pyrandom.rs` — MT19937 plus `random.sample`'s two branches, both of which the two corpora exercise. *Finding 1* |
-| POA (`spoa`) | not started, **de-risked** | the invocation is byte-for-byte isONcorrect's, where `spoars` was measured identical on 505/505 cases. *spoa* |
-| reverse-complement detection | not started | needs `parasail_alignment` at `opening_penalty=3` — a second call site with different defaults from the clustering path. The port already has parasail |
-| primer / universal-tail trimming | not started | needs edlib **HW** mode with `task="locations"` and `additionalEqualities`. Different from the NW/CIGAR path isONcorrect reimplemented. *The aligners* |
-| medaka / racon drivers | not started | stay subprocesses. Measured reproducible: 3 runs of `--consensus --racon` differ only in the captured minimap2 and racon **stderr logs**, which carry timings; every consensus fasta is identical |
-| `write_fastq` | not started | broken in the reference (*Finding 6*). Decide before porting |
+
+The rows that used to sit below this table — `--symmetric_map_align_thresholds`, `--m`/`--s`, POA,
+reverse-complement detection, primer trimming, the polisher drivers, `write_fastq` — each said
+"not started" and each was superseded by a "done" row above. They are deleted rather than updated: a
+status table that contradicts itself teaches you to stop reading it. One measurement from them is
+worth keeping, because it is the reason the polisher cases can be goldens at all:
+
+> Three runs of `--consensus --racon` differ **only** in the captured minimap2 and racon stderr logs,
+> which carry timings. Every consensus fasta is identical. That is why `NOT_CONTRACT_RE` excludes
+> those logs from hashing while still counting their existence.
 
 ## The pipeline, in one pass
 
@@ -465,15 +471,15 @@ tractable reproducer rather than a needle in a 1 198-sequence graph. At 150 bp
 they agree, so the boundary is sharp. Most likely one tie-break or one traversal
 rule. Not worth doing now that linking works.
 
-## The aligners## The aligners## The aligners
+## The aligners
 
 Three call sites, three different problems.
 
 | Call site | What it needs | Status |
 | --- | --- | --- |
 | `cluster.parasail_block_alignment` — the clustering decision | parasail `sg_trace_scan_16`, `match 2, mismatch -2, gap_ext 1`, gap opening binned 5/4/3/2 by summed error rate, falling back to `_32` on saturation | **done** in the isONclust port: 18 633 alignments identical, CIGAR *and* ratio |
-| `consensus.parasail_alignment` — reverse-complement detection | the same parasail call at **`opening_penalty=3`**, and the identity is computed by zipping the two gapped strings and counting mismatches, so it charges leading and trailing gaps | port's `parasail.rs` covers the call; the **default is different** and the identity formula is new. Needs its own oracle |
-| `barcode_trimmer.find_barcode_locations` — primer and tail trimming | edlib **HW** (infix) mode, `task="locations"`, `k=--primer_max_ed`, and a 36-pair `additionalEqualities` IUPAC map | **new.** Not what isONcorrect reimplemented |
+| `consensus.parasail_alignment` — reverse-complement detection | the same parasail call at **`opening_penalty=3`**, and the identity is computed by zipping the two gapped strings and counting mismatches, so it charges leading and trailing gaps | **done.** `consensus::highest_aln_identity`, with its own oracle (`tests/identity_oracle.rs`): 12 recorded calls × 3 values, exact equality, both orientations checked rather than only the `max()` |
+| `barcode_trimmer.find_barcode_locations` — primer and tail trimming | edlib **HW** (infix) mode, `task="locations"`, `k=--primer_max_ed`, and a 36-pair `additionalEqualities` IUPAC map | **done.** `edlib.rs`, 96 of 96 recorded calls. The multiple-location tie-break is **unexercised** — see `tests/edlib_oracle.rs` |
 
 The third is the one that needs a decision. isONcorrect's `align.rs` reimplements edlib's **NW**
 traceback, and the tie-break had to be *measured* — only one of six preference orderings reproduces
@@ -627,11 +633,52 @@ Defect 2 is the same shape as the one `tools/repo-slim/analyze.sh` had — a `se
 only fires on a path nobody had taken. Three instances of it in one session is enough to call it a
 pattern: **in these scripts, put `|| true` inside the substitution, not after it.**
 
+### Defect 5 — the harness can be wrong about the thing it exists to measure
+
+A `verify` run reported three convincing failures:
+
+```
+FAIL  wf_N0 (exit 70, want 1)
+FAIL  wf_N2 (exit 70, want 1)
+FAIL  wf_N10 (exit 70, want 1)
+```
+
+70 was `EXIT_NOT_IMPLEMENTED`. The binary predated `write_fastq`; the sources were correct and had
+been correct the whole time. `sup` passed 55 of 55 in the same run, because that half ran after a
+rebuild. Nothing in the output said "stale" — a stale binary fails in exactly the shape a real
+regression does, and the exit code even pointed at a constant that no longer existed in the tree.
+
+`check_bin_fresh` now compares `PORT_BIN`'s mtime against `rust/src`, `rust/tests`, `Cargo.toml` and
+`Cargo.lock`, names the newest offending file, and **exits 1**. Not a warning: a warning scrolls past,
+and the whole cost here was believing a number. `ALLOW_STALE_BIN=1` overrides it for testing an older
+build deliberately. It guards `verify`, `cli verify`, `tools` and `stage` — every path that runs the
+port.
+
+Two smaller lessons from the same episode, both mine rather than the code's:
+
+* **Do not edit `bench/equivalence.sh` while a run of it is in flight.** Bash reads a script by byte
+  offset as it executes; inserting lines mid-run can make the running shell resume at the wrong
+  place. A `sup` run was killed and redone for this reason.
+* **`verify` silently skips the 14 `--consensus` cases when `spoa` is not on `PATH`**, and reports
+  `41 passed` rather than 55. That is correct behaviour and it is stated per case (`cannot verify …
+  here`), but the summary line alone reads like a full pass. Run the matrix with
+  `PATH="$HOME/miniforge3/envs/ngspeciesid-ref/bin:$PATH"`, or the consensus stage is unverified.
+
 ### The exit-code contract
 
-**44 cases are recorded** in `bench/golden/<corpus>/cli/`, each with its exit code, stdout and
-stderr. Every exit code below is measured, and several of them are wrong in an interesting way and
-are contract regardless:
+**45 cases are recorded** in `bench/golden/<corpus>/cli/`, each with its exit code, stdout and
+stderr — and two of them also record the **files left in the output folder**, because for those two
+the side effects are the contract and the message is not (see `CLI_CASE_OUTDIR`, and *Finding 18*).
+Every exit code below is measured, and several of them are wrong in an interesting way and are
+contract regardless.
+
+The classes are **29 exact, 16 traceback, 0 pending**. That last number was 6 for most of the port:
+`abbrev_outf`, `ont_over_k`, `k_then_ont`, `isoseq_over_w`, `medaka_no_consensus` and
+`q_filters_all` are full runs of the tool, deferred until the stages existed. The stages existed for
+some time before anyone re-tested them — all six are byte-identical, medaka included — and until
+then they printed `info pending` and counted as neither a pass nor a failure. **A pending list that
+outlives its reason is worse than no list**: re-test the class when a stage lands, not when something
+fails.
 
 | Case | Exit | Note |
 | --- | --- | --- |
@@ -651,7 +698,8 @@ are contract regardless:
 | fastq with no trailing newline | 1 | `TypeError: 'NoneType' object is not iterable`. *Finding 12* |
 | `--consensus` with neither `--medaka` nor `--racon` | 1 | `UnboundLocalError: polishing_pattern`, **after** forming and merging every consensus. *Finding 4* |
 | `--consensus --max_seqs_for_consensus 0` | 1 | `CalledProcessError`: spoa died with `SIGABRT` on an empty input file. *Finding 22* |
-| `--use_old_sorted_file --k 25` after sorting at `--k 13` | **1 on `smoke`, 0 on `sup`** | `ValueError: not enough values to unpack (expected 8, got 6)`. It needs a short read, and only the smaller corpus has one. *Finding 18* |
+| `--use_old_sorted_file --k 25` after sorting at `--k 13`, `--t 1` | **1 on `smoke`, 0 on `sup`** | `ValueError: not enough values to unpack (expected 8, got 6)`. It needs a short read, and only the smaller corpus has one. *Finding 18*. Leaves 4 files: partial output for every earlier cluster |
+| the same at `--t 8` | **1 on `smoke`, 0 on `sup`** | a **different** unpack site, `parallelize.py:184`, reached before anything is written. Leaves 2 files on `smoke` — `sorted.fastq` and a truncated `logfile.txt` — against 10 on `sup`, where it does not crash |
 | `write_fastq` on a fastq with spaces in headers | 1 | `KeyError` on a truncated accession, after writing some files. *Finding 6* |
 
 **Prefix matching is three behaviours, not two**, and all three are pinned:
@@ -1311,6 +1359,56 @@ Contract. The underlying problem is that `--use_old_sorted_file` reuses a file s
 parameters with no record of what they were; writing `--k`/`--w`/`--q` into the logfile and refusing
 a mismatch is the fix, and it is deferred.
 
+**The port reproduced this wrongly first, and `cli/use_old_k_mismatch` is the only thing that caught
+it.** `write_output` wrote `pyfloat::repr(rep.error_rate.unwrap_or(f64::NAN))` — so the run completed,
+exited **0**, and emitted a `final_cluster_origins.tsv` whose last column was `nan` for that cluster.
+Every output case still passed: 55 of 55 on both corpora, because reaching this needs *two*
+invocations and no case in `bench/cases.tsv` is two invocations. The CLI matrix is, and it said
+`exit 0 want 1`.
+
+Writing `nan` is worse than crashing — exit 0 tells every downstream consumer the run succeeded — so
+the port now stops at the same cluster the reference does. The partial output is part of the contract
+and is reproduced too: both files are already open and written to, and CPython flushes them at
+interpreter shutdown, so the reference leaves **complete records for every earlier cluster and
+nothing for the failing one**. Measured on `sample_h1`: 310 074 bytes of origins and 61 945 of
+clusters, byte-identical from the port, with the same two log lines before the error and no
+`Finished Clustering` line after it.
+
+**And then a third unpack site, which the first fix did not cover.** The reference unpacks that tuple
+in three places, and at `--t > 1` the earliest one wins:
+
+| # | site | when it fires | what the folder holds afterwards |
+| --- | --- | --- | --- |
+| 1 | `parallelize.py:184` — the merge walk rebuilding `read_array` between iterations | `--t > 1`, before any file is written | **nothing** but `sorted.fastq` and a truncated `logfile.txt` |
+| 2 | `parallelize.py:101` — `print_intermediate_results` | never: site 1 unpacks every merged representative and runs first | — |
+| 3 | `NGSpeciesID:114` — the output loop | `--t 1` | complete records for every earlier cluster, nothing for the failing one |
+
+So `--t 8` and `--t 1` are two different contracts, and after fixing site 3 the port still ran a full
+`--t 8` clustering to completion — three numbered directories and both output files the reference
+never writes — and *then* exited 1 with a good message. **Exit code and stderr both agreed with the
+reference.** The CLI matrix as it stood could not have caught it, because the traceback class compares
+an exit code and the shape of stderr and nothing else.
+
+`cli_case` now takes an optional `CLI_CASE_OUTDIR`: the case's output folder is listed (relative path
+and sha256, sorted) into the golden at record time and compared at verify. Recorded for both Finding
+18 cases — 4 files for `--t 1`, 2 for `--t 8` on `sample_h1`. A message that is right about a run
+that wrote the wrong files is not a pass.
+
+Three lessons, and the third is the general one:
+
+* `error_rate: None` in `sweep::ReadInfo` **is** the six-element tuple. Modelling it as an `Option`
+  rather than defaulting it to `0.0` is what made the faithful behaviour expressible at all; a
+  default would have made the divergence unreachable and invisible.
+* **A fix verified on one code path is not a fix.** Site 3 was found, understood, fixed and measured
+  byte-identical — and the same finding was still live two functions away. The reference unpacks that
+  tuple three times; grepping for the other two took one command and should have been the first thing
+  after the diagnosis, not an afterthought.
+* A stage can be 55 of 55 on every output case and still be wrong, because the case matrix runs one
+  command per case. **Multi-invocation state is a blind spot of the matrix by construction**, and the
+  CLI matrix is currently the only place any of it is tested — `use_old_k_mismatch`,
+  `use_old_k_mismatch_t8`, `use_old_missing` and *Finding 23* are all two-command cases. Adding more
+  is in *Deferred improvements*.
+
 ### Finding 19 — the small corpus is blind to five parameters, including the only new clustering logic
 
 The 24-case sweep on `sample_h1.fastq` produced 12 distinct results. Eleven cases collapsed onto one
@@ -1612,6 +1710,19 @@ measurement. Ordered by how much they matter.
 | *Finding 23* | open `sorted.fastq` only on the branch that writes it | stops a failed run poisoning its output folder so the retry exits 0 on zero reads. One line, and the most user-visible of the small ones |
 | *Finding 2* | `math.fsum` at the four `sum(...for...in set(...))` sites | makes Python ≤3.11 agree with ≥3.12. **Not applied**: the decision was to pin the interpreter instead. Written up so the option stays visible |
 
+### Verification gaps, now that every stage is ported
+
+These are the port's own measurement debts, not the reference's bugs. They are listed here because
+"55 of 55, both corpora" is a weaker statement than it looks and it should be read alongside its
+limits.
+
+| gap | why it matters | what would close it |
+| --- | --- | --- |
+| **the case matrix is one invocation per case** | *Finding 18*'s divergence was invisible to all 55 output cases and was caught only by a CLI case, because reaching it needs two commands. `--use_old_sorted_file` and *Finding 23* are the same shape | multi-invocation output cases: sort-then-reuse at a different `--k`, a failed run followed by a retry, `write_fastq` over a clustering from a different `--t` |
+| **the corpora registry is thin** | four separate behaviours — *Findings 19, 25, 26* and edlib's multiple-location tie-break — cannot be observed on either committed corpus. `sample_h1` is the only one that reaches *Finding 18*, which is the clearest evidence that the registry, not the corpus size, is the variable | a PacBio/isoseq corpus, a quality-spread corpus, and a depth axis; and restoring the 428 bp corpus dropped in `11c516f` |
+| **edlib's multiple-location ordering is a guess** | 96 of 96 recorded calls pass and **none** returns more than one location, so `trace_start`'s tie-break is unexercised. `tests/edlib_oracle.rs` asserts the count is zero so this cannot become silent | a corpus or hand-built case producing a tied infix alignment, measured against real edlib |
+| **`ALLOW_STALE_BIN` is the only guard against a stale binary** | see *Defect 5* | CI that always builds before it verifies |
+
 ### Documentation and packaging, which are not port work but are the reason for it
 
 - Replace both README conda recipes with the one that works (*Finding 3*).
@@ -1836,11 +1947,12 @@ with it if so.
 
 ## What is next, concretely
 
-The reconnaissance is finished and so is the harness. Everything from here is Rust, in this order:
+**Steps 1–5 are done; the port is feature-complete.** The list is kept rather than deleted because
+the order it predicted is the order the work actually took, and two of its notes turned out to be the
+method points that mattered.
 
 1. ~~`rust/` skeleton and the CLI.~~ **Done**, `a6be3f3`. Hand-written rather than clap, for the five
-   reasons in `rust/src/cli.rs`'s module docs. 32 of the 39 checkable cases green on both corpora —
-   all 23 exact ones byte-identical — with the other 7 waiting on runtime stages.
+   reasons in `rust/src/cli.rs`'s module docs.
 
    Two bugs there are worth carrying forward as method, because the **goldens caught them and the
    unit tests did not**: a pre-pass looking for the subcommand claimed `5` in `--min 5` and reported
@@ -1848,18 +1960,22 @@ The reconnaissance is finished and so is the harness. Everything from here is Ru
    the subparser so `write_fastq --help` reported a missing `--fastq`. Both unit-test suites were
    green throughout, because they tested `resolve` and not `parse`. **Test the thing the golden
    tests.**
-2. **Bring the isONclust engine across.** Measured to reproduce this reference at 12 configurations;
-   re-verify against the full 51-case matrix. Delete `readfq`'s `replace(" ", "_")`. Restrict the
-   probability table to `k >= 10`.
-3. **`--m`/`--s` and `--top_reads`**, which are straightforward, then **`--sample_size`**, which
-   needs `pyrandom.rs`: MT19937 seeded by `init_by_array`, `getrandbits`, `_randbelow`, and
-   `random.sample`'s two branches. `smoke` exercises the pool branch and `sup` the selection-set one,
-   so a port that implements only one fails on exactly one corpus. *Finding 1* has the details.
-4. **`--symmetric_map_align_thresholds`**, with `stage parasail` as its oracle — the dump already
-   carries the second alignment ratio the flag reads — verified on `sup`, where it is visible.
-5. **The consensus stage**, in dependency order, each against the oracle that already exists for it:
-   `form_draft_consensus` + `spoars` (`stage spoa`), `highest_aln_identity` (`stage identity`),
-   `detect_reverse_complements`, `find_barcode_locations` + the edlib HW tie-break measurement
-   (`stage barcode`), `remove_barcodes`, then the medaka and racon drivers.
+2. ~~Bring the isONclust engine across.~~ **Done.** Four deliberate changes from the isONclust port,
+   each measured: spaces kept in accessions, `chop` as `l[:-1]`, the probability table restricted to
+   this repo's own, and `--symmetric_map_align_thresholds` written from scratch.
+3. ~~`--m`/`--s`, `--top_reads`, `--sample_size`.~~ **Done**, with `pyrandom.rs` and a 64-draw oracle.
+   `smoke` exercises `random.sample`'s pool branch and `sup` the selection-set one, so a port that
+   implements only one fails on exactly one corpus.
+4. ~~`--symmetric_map_align_thresholds`.~~ **Done**, verified on `sup`, where it is visible at all.
+5. ~~The consensus stage.~~ **Done**: spoa linked rather than reimplemented, `highest_aln_identity`
+   and `detect_reverse_complements` with their own parasail oracle, edlib HW with a 96-call oracle,
+   the trimming arithmetic, and the medaka and racon drivers with the re-trim loop. Then
+   `write_fastq`, *Finding 6* and all.
 6. **CI on Linux and macOS, x86_64 and arm64.** Method point 7, and doubly so here: the central
-   claim of this document is platform-specific and was measured on one machine.
+   claim of this document is platform-specific and was measured on one machine. It would also close
+   the stale-binary hole in *Defect 5* for good, by always building before it verifies.
+7. **The verification gaps**, which are now the port's largest open item and have their own table in
+   *Deferred improvements*: multi-invocation cases, the corpora registry, and edlib's unexercised
+   tie-break.
+8. **The repository slimming.** Analysed, the tooling is in the tree and runs, and the force-push over
+   16 forks and a published paper's repository is a human decision — see *Working agreements*.
