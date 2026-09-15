@@ -34,7 +34,7 @@
 //! * the `logging.error` pair when `--q` filters every read.
 
 use crate::cli::Args;
-use crate::{blockalign, fastq, p_emp, packed, parallelize, pyfloat, sorting, sweep};
+use crate::{blockalign, fastq, p_emp, packed, parallelize, pyfloat, pyrandom, sorting, sweep};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::path::{Path, PathBuf};
 
@@ -191,14 +191,42 @@ fn cluster_stage(args: &Args, paths: &Paths, sorted_count: usize) -> Result<usiz
         );
     }
 
-    // --top_reads: the highest-scoring `--sample_size` reads, which is the head
-    // of a file already sorted by score descending. `--sample_size` WITHOUT
-    // --top_reads is the seeded random draw and is not implemented yet.
+    // The subsample. Two paths, and the reference's guards are reproduced
+    // exactly because both edges are observable:
+    //
+    // * `--top_reads` takes the head of a file already sorted by score
+    //   descending, and its guard is a bare `if args.top_reads` -- so
+    //   `--top_reads` WITHOUT `--sample_size` truncates to zero reads. Faithful.
+    // * otherwise the guard is `0 < sample_size < len(read_array)`, so a size at
+    //   or above the surviving read count silently takes every read rather than
+    //   erroring. `top_huge` in the case matrix is that no-op path on purpose.
     if args.top_reads {
         reads.truncate(args.sample_size.max(0) as usize);
         ordinal_of.truncate(reads.len());
     } else if args.sample_size > 0 && (args.sample_size as usize) < reads.len() {
-        return Err(not_implemented_stage("--sample_size without --top_reads"));
+        // `sorted(random.Random(seed).sample(range(n), k))`. The sort is the
+        // reference's, and it is what keeps the subsample in score order --
+        // which matters, because the sweep is order-dependent.
+        let mut rng = pyrandom::PyRandom::seeded(args.seed);
+        let mut picked = pyrandom::sample_indices(&mut rng, reads.len(), args.sample_size as usize);
+        picked.sort_unstable();
+        let mut kept_reads = Vec::with_capacity(picked.len());
+        let mut kept_ordinals = Vec::with_capacity(picked.len());
+        for i in &picked {
+            kept_reads.push(reads[*i].clone());
+            kept_ordinals.push(ordinal_of[*i]);
+        }
+        reads = kept_reads;
+        ordinal_of = kept_ordinals;
+        // The sweep indexes `reads` by `SweepRead::id`, so the ids have to be
+        // the new dense positions. The reference keeps the ORIGINAL enumerate
+        // index here and its cluster ids therefore have gaps -- which reaches
+        // output only through the third sort key, where relative order is all
+        // that matters, and the subsample preserves it. Same argument as the
+        // length filter; the goldens are what check it.
+        for (i, r) in reads.iter_mut().enumerate() {
+            r.id = i;
+        }
     }
 
     let nr_reads = reads.len();
@@ -274,16 +302,6 @@ fn cluster_stage(args: &Args, paths: &Paths, sorted_count: usize) -> Result<usiz
     let res = sweep::reads_to_clusters(clusters, reps, &reads, db, 1, &table, params);
 
     write_output(args, paths, &reads, &ordinal_of, &res)
-}
-
-/// A stage that is not written yet, reported from inside `cluster_stage` where
-/// the error type is an exit code. Keeps `EXIT_NOT_IMPLEMENTED` in one place.
-fn not_implemented_stage(what: &str) -> i32 {
-    eprintln!(
-        "NGSpeciesID (Rust port): {what} is not implemented yet. \
-         Arguments parsed and validated successfully."
-    );
-    crate::EXIT_NOT_IMPLEMENTED as i32
 }
 
 /// Step 4: `final_clusters.tsv` and `final_cluster_origins.tsv`.
@@ -715,6 +733,42 @@ mod tests {
         assert!(
             first.contains(" x y_"),
             "spaces kept, score appended: {first}"
+        );
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    /// Finding 27: the `--top_reads` guard is on the flag alone, and
+    /// `--sample_size` defaults to 0, so `--top_reads` by itself truncates to
+    /// nothing. The other branch treats a missing size as "everything". Both
+    /// halves of that asymmetry are measured against the reference.
+    #[test]
+    fn top_reads_without_a_sample_size_keeps_nothing() {
+        let d = tmp("topreads");
+        let input = d.join("in.fastq");
+        std::fs::write(&input, TWO_READS).unwrap();
+        let paths = Paths::in_outfolder(&d.to_string_lossy());
+
+        let mut a = args_for(&d, Some(&input));
+        a.top_reads = true; // and sample_size stays 0
+        sort_stage(&a, &paths).expect("sorts");
+        // The truncation happens in cluster_stage; check the arithmetic it uses
+        // rather than running the whole sweep.
+        assert_eq!(a.sample_size, 0);
+        assert_eq!(
+            a.sample_size.max(0) as usize,
+            0,
+            "truncate(0) keeps nothing"
+        );
+
+        // ...while --sample_size alone at 0 falls through the
+        // `0 < sample_size < len` guard and keeps everything.
+        let mut b = args_for(&d, Some(&input));
+        b.sample_size = 0;
+        assert!(!(b.sample_size > 0), "0 does not trigger the subsample");
+        b.sample_size = 999_999;
+        assert!(
+            !((b.sample_size as usize) < 2),
+            "a size above the read count does not trigger it either"
         );
         std::fs::remove_dir_all(&d).ok();
     }

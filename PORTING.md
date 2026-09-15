@@ -202,6 +202,7 @@ that wrote it.
 | **the sorting stage** | **done, byte-identical on both corpora** | `equivalence.sh stage sort`: **52 of 52**. `sorted.fastq` and `logfile.txt` |
 | **the clustering engine, `--t 1`** | **done, byte-identical on both corpora** | carried across from isONclust with four deliberate changes; `--symmetric_map_align_thresholds` written from scratch |
 | **`--t > 1`** | **done, byte-identical on both corpora** | `parallelize.rs`, including every per-iteration `<n>/pre_clusters.csv` and `<n>/cluster_origins.csv`. The batch counts, the merge walk and the iteration count all match |
+| **`--m`/`--s`, `--top_reads`, `--sample_size`** | **done, byte-identical on both corpora** | `pyrandom.rs` reproduces CPython's MT19937 and `random.sample`'s two branches; `tests/pyrandom_oracle.rs` replays 64 recorded draws, both branches, 6 seeds including a negative one and two above 2³² |
 | stage oracles | **written and exercised on both corpora; the replay half waits for the port** | `bench/dump_reference.py` covers six stages, three of them new here. *Finding 25* has the coverage counts |
 | corpora | **done, 2 committed, both measured for discriminating power** | *The corpora*, *Finding 19* |
 | case matrix swept on both corpora | **done** | 24 cases; `Supplementary_File1_reads.fastq` gives 19 distinct results and 1 unintended collision, `sample_h1.fastq` gives 12 and 8 |
@@ -800,12 +801,23 @@ A local `Random` instance rather than `random.seed()`, so nothing else in the pr
 The draw is identical either way — checked: `Random(0).sample(...)` equals `random.seed(0)` followed
 by `random.sample(...)`, since both seed the same generator.
 
-#### What this now obliges the port to do
+#### What this obliged the port to do — **done**, `pyrandom.rs`
 
 The port has to reproduce **CPython's Mersenne Twister and `random.sample`'s selection algorithm
-exactly**. That is a new requirement — before, no implementation could have matched — and it is
-tractable and well specified, in the same class as the `pyfloat.rs` and `pyround.rs` the isONclust
-port already needed. Call it `pyrandom.rs`.
+exactly**. That was a new requirement — before `--seed`, no implementation could have matched — and
+it turned out to be exactly the class of work `pyfloat.rs` and `pyround.rs` already were: about 200
+lines, fully specified, and checkable against the interpreter.
+
+Verified by `tests/pyrandom_oracle.rs` against **64 recorded draws**, each the full index list in
+*sample order* rather than sorted, so a port producing the right set in the wrong order still fails.
+The axes swept: both corpora's real sizes at `--sample_size` 100 and 200; seeds 0, 1, 7, 42, **−5**
+and two above 2³²; the branch boundary at `setsize(k) − 1`, `setsize(k)` and `setsize(k) + 1` for
+five values of `k`; and the degenerate shapes `k == 0`, `k == n`, `n == 1`.
+
+**The spot checks were wrong the first time, and that is the lesson.** The hand-written constants in
+`pyrandom.rs` were recalled rather than run — they were the `random()` stream, not the
+`getrandbits(32)` one — and every one of them looked plausible. The oracle exists so that cannot
+happen quietly again. *Run the interpreter; do not remember it.*
 
 Three pieces, all from CPython's `random.py` and `_randommodule.c`:
 
@@ -918,6 +930,36 @@ at all — no consensus, no warning.
 The port must reproduce the exit code. Whether it reproduces the traceback is a separate question, and
 the fix — treat `--consensus` without a polisher as "draft consensus only", which is what a user
 plainly means, and reject a polisher without `--consensus` — belongs in *Deferred improvements*.
+
+### Finding 27 — `--top_reads` without `--sample_size` silently clusters zero reads
+
+```python
+if args.top_reads:
+    read_array = read_array[:args.sample_size]
+```
+
+The guard is on `--top_reads` alone, and `--sample_size` defaults to **0**, so
+`read_array[:0]` is empty. Measured:
+
+| invocation | exit | reads clustered |
+| --- | --- | --- |
+| `--top_reads` | **0** | **0** |
+| `--sample_size 0` | 0 | 274 (all) |
+| `--sample_size 0 --top_reads` | **0** | **0** |
+| `--sample_size 999999` | 0 | 274 (all) |
+
+So the flag that means "take the best reads" means "take none of them" unless
+`--sample_size` is also given, and it says so with a clean exit and an empty
+`final_clusters.tsv`. Note the asymmetry with the other branch: `--sample_size`
+on its own is guarded by `0 < sample_size < len(read_array)`, so 0 and 999999
+both fall through to "use everything". One branch treats a missing size as zero
+and the other treats it as everything.
+
+The README now recommends `--top_reads` for reproducibility (*Finding 1*), which
+makes this more reachable than it was: a user who copies that advice without the
+`--sample_size` gets an empty run. Reproduced, and fixing it — `--top_reads`
+should require `--sample_size`, or be a no-op without it — is in *Deferred
+improvements*.
 
 ### Finding 26 — the unconditional `yield batch` is faithful and nothing exercises it
 
@@ -1531,6 +1573,7 @@ measurement. Ordered by how much they matter.
 | *Finding 15* | delete both dead checks | noise removal, no behaviour |
 | *Finding 18* | record `--k`/`--w`/`--q` in the logfile and refuse a `--use_old_sorted_file` mismatch | closes the only route to the 6-vs-8 tuple crash |
 | *Finding 22* | reject `--max_seqs_for_consensus 0` in the parser | stops handing spoa an empty file and taking a `SIGABRT` |
+| *Finding 27* | make `--top_reads` require `--sample_size`, or a no-op without it | stops the flag the README recommends for reproducibility silently clustering zero reads |
 | *Finding 20* | document that `--abundance_ratio` applies after subsampling, and floor the cutoff at 1 | stops singletons reaching spoa at small `--sample_size` |
 | *Finding 23* | open `sorted.fastq` only on the branch that writes it | stops a failed run poisoning its output folder so the retry exits 0 on zero reads. One line, and the most user-visible of the small ones |
 | *Finding 2* | `math.fsum` at the four `sum(...for...in set(...))` sites | makes Python ≤3.11 agree with ≥3.12. **Not applied**: the decision was to pin the interpreter instead. Written up so the option stays visible |
