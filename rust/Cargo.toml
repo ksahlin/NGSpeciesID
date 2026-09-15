@@ -54,6 +54,7 @@ rustc-hash = "2.1.3"
 # bytes as `Vec<u32>`, so the table does not grow, and most of those heap blocks
 # simply stop existing.
 smallvec = "1.15"
+spoa = "0.2.1"
 
 [profile.release]
 opt-level = 3

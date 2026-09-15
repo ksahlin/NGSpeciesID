@@ -25,83 +25,94 @@
 //! `i >= max_seqs_for_consensus` — admitting exactly that many, unlike
 //! isONcorrect's bare `>`.
 
-use std::io::Write;
-use std::path::Path;
-use std::process::Command;
-
-/// The consensus of one cluster, by running `spoa` exactly as the reference
-/// does.
+/// The POA consensus of `seqs`, weighted by `quals`, in insertion order.
 ///
-/// `reads_path` is the FASTQ `form_draft_consensus` has already written; the
-/// argument vector is the reference's, verbatim. Returns `None` if spoa is
-/// absent or fails, with the cause already reported.
-// Wired in by the consensus stage, which is the next slice.
+/// **This is spoa's own C++ code**, vendored and linked by `spoa-sys`, not a
+/// reimplementation that agrees with it. Exact by construction, which is what
+/// byte-identity requires — see `tests/spoa_oracle.rs` for what happened when a
+/// reimplementation was tried.
+///
+/// `quals` may be shorter than `seqs` or hold empty strings, in which case those
+/// sequences weigh 1 per base — the FASTA path, which the reference never takes.
+// Wired in by `form_draft_consensus`, which is the next slice.
 #[allow(dead_code)]
-pub fn consensus_via_spoa(reads_path: &Path, tmp_out: &Path) -> Option<String> {
-    let out = match Command::new("spoa")
-        .arg(reads_path)
-        .args(["-l", "0", "-r", "0", "-g", "-2"])
-        .output()
-    {
-        Ok(o) => o,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("Error: spoa not found on PATH. --consensus needs it.");
-            return None;
-        }
-        Err(e) => {
-            eprintln!("Error: could not run spoa: {e}");
-            return None;
-        }
-    };
-    if !out.status.success() {
-        // The reference raises CalledProcessError here, which is a traceback.
-        // Finding 22's SIGABRT on an empty input is the reachable case.
-        eprintln!(
-            "Error: spoa failed on {} ({}).",
-            reads_path.display(),
-            out.status
-        );
-        return None;
+pub fn consensus(seqs: &[String], quals: &[String]) -> String {
+    if seqs.is_empty() {
+        return String::new();
     }
-    // The reference writes spoa's stdout to a file and reads line 2 back.
-    // Reproduced through the same file, so a spoa that prints anything
-    // unexpected is seen the same way.
-    if let Ok(mut f) = std::fs::File::create(tmp_out) {
-        let _ = f.write_all(&out.stdout);
+    // `spoa <reads.fq> -l 0 -r 0 -g -2` resolves to kSW (local), m=5, n=-4,
+    // g=-2 from the flag, and spoa's own defaults for e/q/c. Passing the
+    // defaults explicitly rather than repeating -2 four times: spoa normalises
+    // (g >= e means linear, then e := g) and the stored q/c are its own.
+    let mut engine = spoa::AlignmentEngine::new(spoa::AlignmentType::kSW, 5, -4, -2, -6, -10, -4);
+    let mut graph = spoa::Graph::new();
+    for (i, s) in seqs.iter().enumerate() {
+        let b = s.as_bytes();
+        let aln = engine.align(b, &graph);
+        match quals.get(i) {
+            // THE GRAPH IS QUALITY-WEIGHTED, and nothing in `run_spoa`'s
+            // argument list says so: it hands spoa a FASTQ, and spoa's CLI
+            // calls the quality overload whenever the input has qualities.
+            // Measured: the same 20 sequences give 847 bp as FASTQ and 860 bp
+            // as FASTA.
+            Some(q) if q.len() == b.len() => graph.add_alignment_with_qual(&aln, b, q.as_bytes()),
+            _ => graph.add_alignment(&aln, b, 1),
+        }
     }
-    let text = String::from_utf8_lossy(&out.stdout);
-    text.lines().nth(1).map(|l| l.trim_end().to_string())
+    String::from_utf8(graph.consensus()).expect("spoa's consensus is ASCII")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// spoa's own output shape: a `>Consensus` header then the sequence. Only
-    /// line 2 is read, which is what the reference does.
     #[test]
-    fn the_second_line_is_the_consensus() {
-        let text = ">Consensus LN:i:12\nACGTACGTACGT\n";
-        assert_eq!(text.lines().nth(1), Some("ACGTACGTACGT"));
+    fn no_sequences_gives_an_empty_consensus() {
+        assert_eq!(consensus(&[], &[]), "");
     }
 
     #[test]
-    fn a_missing_spoa_is_reported_not_panicked() {
-        // Nothing to assert about the message here beyond that it returns
-        // rather than unwinding; the binary's absence is an environment fact.
-        let d = std::env::temp_dir();
-        let missing = d.join("ngsid-no-such-reads.fq");
-        let out = d.join("ngsid-no-such-out.fa");
-        if which_spoa().is_none() {
-            assert!(consensus_via_spoa(&missing, &out).is_none());
-        }
+    fn one_sequence_is_its_own_consensus() {
+        let s = "ACGTACGTACGTAAGGCCTTACGTACGT".to_string();
+        assert_eq!(consensus(std::slice::from_ref(&s), &[]), s);
     }
 
-    fn which_spoa() -> Option<std::path::PathBuf> {
-        std::env::var_os("PATH").and_then(|paths| {
-            std::env::split_paths(&paths)
-                .map(|p| p.join("spoa"))
-                .find(|p| p.is_file())
-        })
+    #[test]
+    fn identical_sequences_give_that_sequence() {
+        let s = "ACGTACGTACGTAAGGCCTTACGTACGT".to_string();
+        assert_eq!(consensus(&[s.clone(), s.clone(), s.clone()], &[]), s);
+    }
+
+    /// A quality string of the wrong length falls back to weight 1 rather than
+    /// panicking -- the binding asserts equal lengths, and a mismatched pair is
+    /// a bug upstream of here, not a reason to abort a run.
+    #[test]
+    fn a_mismatched_quality_length_falls_back_to_unweighted() {
+        let s = "ACGTACGTACGTAAGGCCTTACGTACGT".to_string();
+        let short = "IIII".to_string();
+        assert_eq!(consensus(std::slice::from_ref(&s), &[short]), s);
+    }
+
+    /// Quality weighting is not cosmetic: it changes the consensus. Two reads
+    /// disagree at one position, and the higher-quality base wins even when it
+    /// is in the minority.
+    #[test]
+    fn quality_weighting_changes_the_answer() {
+        let a = "ACGTACGTACGTAAGGCCTTACGTACGTAC".to_string();
+        let b = "ACGTACGTACGTAAGGCCTTACGTACGTAG".to_string();
+        // Unweighted, two votes for ...AC beat one for ...AG.
+        let unweighted = consensus(&[a.clone(), a.clone(), b.clone()], &[]);
+        // Weighted, the single high-quality read outweighs two poor ones.
+        let lowq: String = std::iter::repeat_n('!', a.len()).collect(); // phred 0
+        let highq: String = std::iter::repeat_n('I', b.len()).collect(); // phred 40
+        let weighted = consensus(
+            &[a.clone(), a.clone(), b.clone()],
+            &[lowq.clone(), lowq, highq],
+        );
+        assert_eq!(unweighted, a);
+        assert_ne!(
+            weighted, unweighted,
+            "quality weights must reach the consensus"
+        );
     }
 }

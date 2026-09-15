@@ -396,7 +396,7 @@ Missing tools must **exit non-zero and name the tool**. Today they surface as a
 buried in it; the port should say `racon not found on PATH` and nothing else. This is the one place
 where improving on the reference costs nothing measurable, and it should still be its own commit.
 
-## spoa — **measured, and `spoars` was rejected**
+## spoa — **linked, not reimplemented and not shelled out to**
 
 `run_spoa` invokes:
 
@@ -404,24 +404,21 @@ where improving on the reference costs nothing measurable, and it should still b
 spoa <reads.fq> -l 0 -r 0 -g -2
 ```
 
-Byte-for-byte the invocation isONcorrect uses, where `spoars` was measured
-identical on **505 of 505** cases. **That result does not transfer, and the port
-shells out to `spoa` instead.** Measured on ten invocations recorded from this
-repository's own corpora by `bench/dump_reference.py --stage spoa`:
+The port **links spoa's own C++ code**, vendored and built by `spoa-sys` 0.2.1.
+Exact by construction, and with no binary needed on `PATH` at run time. Measured
+against ten invocations recorded from this repository's corpora by
+`bench/dump_reference.py --stage spoa`:
 
-| attempt | result |
+| engine | agrees with the reference |
 | --- | --- |
-| `spoars` 0.1.4, weight 1 per base | **0 of 10** identical — 860 bp against 847 |
-| …with spoa's real CLI defaults for `e`/`q`/`c` | **0 of 10**, byte-for-byte the same failures |
-| …quality-weighted, as spoa actually does | **0 of 10**, but much closer: 848 against 847 |
+| **`spoa-sys` 0.2.1 (linked C++, vendored spoa 4.1.4)** | **10 of 10**, including the 1 198-sequence case |
+| `spoars` 0.1.4 (native Rust), quality-weighted | **0 of 10** — 848 bp against 847, and similar |
+| `spoars`, weight 1 per base | 0 of 10 — 860 bp against 847 |
 
-**The control is what makes that conclusion safe.** The real `spoa` binary, given
-the recorded input reconstructed as a FASTQ, reproduces the recorded consensus in
-**6 of 6** cases. So the oracle captures everything spoa needs — sequences,
-qualities, and insertion order — and the remaining 1–7 bp differences are
-`spoars` itself, not the harness.
+The vendored 4.1.4 agrees with the reference environment's 4.1.5, so the version
+gap does not matter here. It built against CMake 4.2.3 without a workaround.
 
-### The quality trap, which cost the first two attempts
+### The quality trap, which is the reason `spoars` looked worse than it is
 
 `run_spoa` hands spoa a **FASTQ**, and spoa's CLI weights the graph by per-base
 quality whenever the input has any:
@@ -434,46 +431,38 @@ else                     graph.AddAlignment(alignment, it->data, it->quality);
 with weight `ord(q) - 33`. **Nothing in `run_spoa`'s argument list says so.**
 Measured: the same 20 sequences give an **847 bp** consensus as FASTQ and
 **860 bp** as FASTA. The first version of the dump recorded only the sequences,
-so the first two attempts were comparing two different problems — and both
-failures looked like a POA disagreement.
+so the first two comparisons were between two different problems — and both
+failures looked like a POA disagreement. `dump_reference.py` records qualities
+now, and `poa.rs` passes them.
 
-isONcorrect passes a **FASTA**. That is why its 505/505 result is real and why it
-says nothing about this repository.
+isONcorrect passes a **FASTA**, which is why its 505/505 `spoars` result is
+genuine and says nothing about this repository. Nor would it have transferred on
+scale: up to **1 198** sequences per POA here against its 28, and whole 1 600 bp
+amplicon reads against correction intervals.
 
-### Why it would not have transferred anyway
+### What a C++ dependency costs, and why it is the right trade here
 
-| | isONcorrect | NGSpeciesID |
-| --- | --- | --- |
-| sequences per POA | up to 28 | up to **1 198** |
-| sequence length | correction intervals | up to **1 600 bp** |
-| input format | FASTA | **FASTQ, quality-weighted** |
+The port's goal is *installation that works*, not purity — so a vendored library
+built at compile time is strictly better than either alternative. It needs a C++
+toolchain and CMake to **build**, and nothing at all to **run**; the subprocess
+version needed `spoa` on `PATH` forever. Against the reference, which needs the
+binary, this is a straight improvement.
 
-### What the port does
+The same reasoning applies to `parasail`: `libparasail-sys` is already an
+optional feature and is exact by construction. It stays off by default only
+because `parasail.rs` is *also* exact and the corpora are small — that is a
+speed choice, not a correctness one, and it can flip whenever a corpus makes it
+worth the build time.
 
-**Shells out to `spoa`, exactly as the reference does**, with the same argument
-vector. Exact by construction, which is what byte-identity requires.
+### If `spoars` is ever picked up again
 
-The cost is honest and small: `--consensus` keeps one external binary. It costs
-nothing *relative to the reference*, which needs the same binary — and nobody
-runs draft-only consensus today anyway, because `--consensus` without a polisher
-crashes (*Finding 4*). Anyone using `--consensus` in practice already needs
-medaka or racon.
+`rust/tests/spoa_oracle.rs` is the harness. The divergence is **small and
+minimal**: two sequences truncated to 200 bp already differ, which is a
+tractable reproducer rather than a needle in a 1 198-sequence graph. At 150 bp
+they agree, so the boundary is sharp. Most likely one tie-break or one traversal
+rule. Not worth doing now that linking works.
 
-`rust/tests/spoa_oracle.rs` is kept as the record of the rejected candidate and
-as a harness for the next one: wire a candidate's `consensus(&seqs, &quals)` into
-it and run `cargo test --test spoa_oracle -- --ignored`. The remaining options,
-in the order they are worth trying:
-
-1. **`spoa`/`spoa-sys` bindings** — identical by construction, at the cost of a
-   C++ toolchain. The only option that is both exact and dependency-free at run
-   time.
-2. **A native reimplementation**, validated against this oracle. Tractable and
-   checkable rather than a leap, but a real project.
-3. **Chase `spoars`' remaining 1–7 bp.** It is now close enough that the
-   difference is probably one tie-break or one traversal rule. Worth an hour
-   before option 2, not worth a week.
-
-## The aligners## The aligners
+## The aligners## The aligners## The aligners
 
 Three call sites, three different problems.
 
