@@ -24,21 +24,31 @@ path = "src/main.rs"
 
 [features]
 # parasail's own C library, linked through FFI. Exact by construction -- it IS
-# the implementation the reference calls -- and 13-16x faster than the scalar
-# port.
+# the implementation the reference calls.
 #
-# OFF BY DEFAULT, which inverts isONclust's choice, and deliberately. That port
-# is about speed on 100 000-read transcriptomes; this one is about installation
-# working at all (PORTING.md, Goal), and the corpora are amplicons: 3 000 reads
-# clustering in 1.6 seconds. Trading a cmake-and-libclang build dependency for
-# time nobody is waiting on would be the wrong way round. The pure-Rust
-# `parasail.rs` is equally exact -- 18 633 alignments identical, CIGAR and
-# ratio, in the isONclust port -- so this is a build-complexity choice and not a
-# correctness one.
+# ON BY DEFAULT, matching the isONclust port. This reverses the original choice
+# here, which was argued as: this port is about installation working at all
+# (PORTING.md, Goal), the FFI costs a cmake-and-libclang build dependency, and
+# the corpora are amplicons -- 3 000 reads clustering in 1.6 seconds, so nobody
+# is waiting.
 #
-# Turn it on with `--features parasail-ffi` if a corpus ever gets big enough to
-# care.
-default = []
+# The last clause was measured on the two corpora in this repository's own
+# `test/` directory, and real user data refuted it. On a private long-read
+# corpus (5 000 ONT reads of 1 000-1 858 bp, from a reported bug), `--ont --t 1`:
+#
+#     the Python reference (which calls this same C)   10.3 s
+#     this port, scalar                                24.9 s
+#     this port, FFI                                    4.1 s
+#
+# A Rust port 2.4x slower than the Python it replaces is not a tradeoff anyone
+# chose. At 816 bp the effect is invisible, which is why the original default
+# looked reasonable and was not.
+#
+# The pure-Rust `parasail.rs` stays, is equally exact -- 18 633 alignments
+# identical, CIGAR and ratio, in the isONclust port -- and is one
+# `--no-default-features` away for a build without cmake, libclang, pkg-config
+# and a network-fetching build.rs.
+default = ["parasail-ffi"]
 parasail-ffi = ["dep:libparasail-sys"]
 
 [dependencies]

@@ -9,3 +9,11 @@ repo-slim-archive/
 
 # Rust build output.
 rust/target/
+
+# PRIVATE CORPORA. Collaborator data that is not ours to publish -- see
+# bench/corpora.tsv. Goldens derived from it (which include verbatim read heads
+# and full ONT accessions in sample/) and the script that rebuilds it stay out
+# of this repository entirely.
+bench/golden/private/
+bench/corpora.local.tsv
+bench/corpora_fetch.local.sh

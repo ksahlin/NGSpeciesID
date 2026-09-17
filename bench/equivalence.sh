@@ -83,10 +83,14 @@ REF_PYTHON="${REF_PYTHON:-$HOME/miniforge3/envs/ngspeciesid-ref/bin/python}"
 PORT_BIN="${PORT_BIN:-$ROOT/rust/target/release/NGSpeciesID}"
 # CORPUS accepts a path, or a name from bench/corpora.tsv.
 NGSPECIESID_DATA="${NGSPECIESID_DATA:-$HOME/data/amplicon}"
+# `bench/corpora.local.tsv` is consulted after `bench/corpora.tsv` and is
+# gitignored. It is where PRIVATE corpora are registered -- collaborator data
+# that is not ours to publish, whose name, path and provenance must not enter
+# this repository. Same five columns. See the header of bench/corpora.tsv.
 resolve_corpus() {
   local c="$1" p
   [[ -f "$c" ]] && { echo "$c"; return; }
-  p="$(awk -F'\t' -v n="$c" '$1==n {print $2; exit}' "$ROOT/bench/corpora.tsv" 2>/dev/null)"
+  p="$(awk -F'\t' -v n="$c" '$1==n {print $2; exit}' "$ROOT/bench/corpora.tsv" "$ROOT/bench/corpora.local.tsv" 2>/dev/null)"
   [[ -z "$p" ]] && { echo "$c"; return; }          # not a known name: pass through and let it fail visibly
   case "$p" in
     /*)     echo "$p" ;;
@@ -95,6 +99,29 @@ resolve_corpus() {
   esac
 }
 CORPUS="$(resolve_corpus "${CORPUS:-sup}")"
+
+# The primer file for --primer_file cases.
+#
+# Defaults to the committed one, which belongs to `sup` -- it is the paper's
+# Supplementary File 3. Against any other corpus it is a primer file for
+# somebody else's amplicon, which is why `smoke` finds no primer at all and its
+# barcode oracle is vacuous (PORTING.md, Finding 25).
+#
+# So: a corpus may bring its OWN. If `<corpus dir>/<corpus name>_primer.txt`
+# exists it is used instead, with no flag to remember and nothing to forget --
+# One private corpus has its own primer file beside it, and is the first corpus
+# here whose primers are actually its own. The choice is echoed into the manifest
+# header, because a golden recorded against a different primer file is a
+# different golden.
+resolve_primer() {
+  local base="${CORPUS%.fastq}"
+  if [[ -f "${base}_primer.txt" ]]; then
+    echo "${base}_primer.txt"
+  else
+    echo "$ROOT/test/Supplementary_File3_primer.txt"
+  fi
+}
+PRIMER="${PRIMER:-$(resolve_primer)}"
 GOLDEN="${GOLDEN:-$ROOT/bench/golden}"
 WORK="${WORK:-$(mktemp -d)}"
 
@@ -626,7 +653,7 @@ cmd_cli() {
   cli_case both_presets --ont --isoseq --fastq "$CORPUS"
   cli_case medaka_racon --fastq "$CORPUS" --outfolder "$WORK/mr" --t 1 --medaka --racon
   cli_case tails_primer --fastq "$CORPUS" --outfolder "$WORK/tp" --t 1 \
-                        --remove_universal_tails --primer_file test/Supplementary_File3_primer.txt
+                        --remove_universal_tails --primer_file "$PRIMER"
 
   # --- validation that happens after parsing ---
   cli_case w_lt_k       --fastq "$CORPUS" --k 20 --w 15
@@ -814,6 +841,12 @@ run_case() { # run_case <name> <entry> <args> <runner> <outdir>  -> echoes exit 
   local name="$1" entry="$2" args="$3" runner="$4" outdir="$5"
   rm -rf "$outdir"; mkdir -p "$outdir"
 
+  # @PRIMER@ rather than a hard-coded path, so a corpus that brings its own
+  # primer file is tested against ITS primers. See `resolve_primer`. Written as
+  # a placeholder in cases.tsv instead of substituted at read time because
+  # `check_cases` and the manifest both want the case line as authored.
+  args="${args//@PRIMER@/$PRIMER}"
+
   # A case whose external tool is absent must be SKIPPED, not run. Running it
   # records a FileNotFoundError traceback as the golden, which then "passes"
   # forever on any machine that also lacks the tool -- a case that can never
@@ -924,6 +957,9 @@ cmd_record() {
     echo "# which leaves git permanently dirty and hides real changes in the noise."
     echo "# git records when it was committed; what matters for validity is below."
     echo "# corpus:   $(basename "$CORPUS")  sha256 $(shasum -a 256 "$CORPUS" | cut -d' ' -f1)"
+    # A golden recorded against a different primer file is a different golden,
+    # and which one was used is now per-corpus rather than fixed.
+    echo "# primer:   $(basename "$PRIMER")  sha256 $(shasum -a 256 "$PRIMER" | cut -d' ' -f1)"
     "$REF_PYTHON" -c "import sys,parasail,edlib; print(f'# reference: python {sys.version.split()[0]}, parasail + edlib')"
     # The external tool versions are part of golden validity, not decoration: a
     # spoa upgrade changes every consensus_reference_*.fasta, and a racon or
@@ -1432,7 +1468,7 @@ cmd_stage() {
     echo "==> stage 'barcode': every edlib HW call and its FULL locations list"
     command -v spoa >/dev/null 2>&1 || { bad "spoa not on PATH"; return 0; }
     cmd_stage_dump barcode --abundance_ratio 0.02 \
-      --primer_file test/Supplementary_File3_primer.txt
+      --primer_file "$PRIMER"
     return 0
   fi
   echo "==> stage '$which': the files this stage owns, across the case matrix"

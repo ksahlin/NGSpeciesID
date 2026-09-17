@@ -95,9 +95,9 @@ cons_racon_ab02	main	--ont --t 1 --consensus --racon --abundance_ratio 0.02
 cons_racon_max20	main	--ont --t 1 --consensus --racon --max_seqs_for_consensus 20
 cons_racon_rc1	main	--ont --t 1 --consensus --racon --rc_identity_threshold 1.0
 cons_racon_rc05	main	--ont --t 1 --consensus --racon --abundance_ratio 0.02 --rc_identity_threshold 0.5
-cons_primer	main	--ont --t 1 --consensus --racon --primer_file test/Supplementary_File3_primer.txt
-cons_primer_ed0	main	--ont --t 1 --consensus --racon --primer_file test/Supplementary_File3_primer.txt --primer_max_ed 0
-cons_primer_tw50	main	--ont --t 1 --consensus --racon --primer_file test/Supplementary_File3_primer.txt --trim_window 50
+cons_primer	main	--ont --t 1 --consensus --racon --primer_file @PRIMER@
+cons_primer_ed0	main	--ont --t 1 --consensus --racon --primer_file @PRIMER@ --primer_max_ed 0
+cons_primer_tw50	main	--ont --t 1 --consensus --racon --primer_file @PRIMER@ --trim_window 50
 cons_tails	main	--ont --t 1 --consensus --racon --remove_universal_tails
 cons_sample100	main	--ont --t 1 --consensus --racon --sample_size 100 --abundance_ratio 0.05
 cons_medaka	main	--ont --t 1 --consensus --medaka

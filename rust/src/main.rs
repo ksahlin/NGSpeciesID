@@ -18,6 +18,7 @@
 //! failure, and the harness would call it a pass.
 
 mod align;
+mod aligner;
 mod blockalign;
 mod cli;
 mod cluster;

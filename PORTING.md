@@ -184,7 +184,7 @@ The history rewrite is on neither branch. It is a force-push, it is reviewed on 
 ## Port status
 
 **The port is feature-complete.** Every stage of the pipeline exists in `rust/` and is checked against
-the reference on both corpora. What remains is not porting: repository slimming, CI, and the corpus
+the reference on **six corpora** — 330 output cases and 276 CLI cases, all byte-identical. What remains is not porting: repository slimming, CI, and the corpus
 gaps that four separate findings now point at.
 
 This document began as reconnaissance and was the deliverable of the session that wrote it; the rows
@@ -199,19 +199,19 @@ below were filled in as each stage landed, and the dates are in the commits.
 | interpreter decision | **taken: pin ≥3.12** | same decision as isONclust, same reason. The README recommending 3.11 is *Finding 2* |
 | `--sample_size` decision | **taken: `--seed`, fixed default 0** | *Finding 1*. Commit `04b252f`; verified a no-op on 24 of 24 cases and reproducible through the consensus stage. **The port's one blocker is gone** |
 | CLI contract captured | **done, 45 cases recorded** | `bench/golden/<corpus>/cli/` — exit code, stdout and stderr, scrubbed of paths, timings and traceback line numbers. *The exit-code contract* |
-| output goldens recorded | **done, 55 cases on both corpora** | `bench/golden/<corpus>/manifest.tsv`. Includes every `--consensus` case, both polishers, and the `--t > 1` merge intermediates |
+| output goldens recorded | **done, 55 cases on each of six corpora** | `bench/golden/<corpus>/manifest.tsv`. Includes every `--consensus` case, both polishers, and the `--t > 1` merge intermediates |
 | goldens are reproducible | **done** | `equivalence.sh stable` records the whole matrix twice and diffs: 191 checks, identical. It found two real defects on the way — *Finding 23* and *Finding 24* |
 | the harness itself is tested | **done** | five deliberately-broken "ports" run against the goldens; see *Has the harness got teeth?* |
-| **CLI parity** | **done, all 45 cases, on both corpora** | `equivalence.sh cli verify`: **29 exact byte-identical, 16 traceback, 0 pending**. Two of the traceback cases also pin the files left behind. `cli_audit` counts the classes both ways, so a case cannot be added without being classified |
-| **the sorting stage** | **done, byte-identical on both corpora** | `equivalence.sh stage sort`: **52 of 52**. `sorted.fastq` and `logfile.txt` |
-| **the clustering engine, `--t 1`** | **done, byte-identical on both corpora** | carried across from isONclust with four deliberate changes; `--symmetric_map_align_thresholds` written from scratch |
-| **`--t > 1`** | **done, byte-identical on both corpora** | `parallelize.rs`, including every per-iteration `<n>/pre_clusters.csv` and `<n>/cluster_origins.csv`. The batch counts, the merge walk and the iteration count all match |
-| **`--m`/`--s`, `--top_reads`, `--sample_size`** | **done, byte-identical on both corpora** | `pyrandom.rs` reproduces CPython's MT19937 and `random.sample`'s two branches; `tests/pyrandom_oracle.rs` replays 64 recorded draws, both branches, 6 seeds including a negative one and two above 2³² |
-| **`--consensus`** | **done, byte-identical on both corpora** | spoa **linked** (10/10), RC detection (12/12 recorded identity calls), edlib HW (96/96 recorded calls), the trimming arithmetic, and the medaka and racon drivers with the re-trim loop |
-| **`write_fastq`** | **done, byte-identical on both corpora** | including *Finding 6*: it creates `0.fastq`, fails the first lookup, and leaves a zero-byte file. The goldens record exactly that |
-| **THE PORT IS FEATURE-COMPLETE** | **55 of 55 output cases and every checkable CLI case, both corpora** | every case in `bench/cases.tsv`. Read it with *Verification gaps, now that every stage is ported* — the matrix is one invocation per case, and *Finding 18* is what that misses |
+| **CLI parity** | **done, all 45 cases, on all six corpora** | `equivalence.sh cli verify`: **29 exact byte-identical, 16 traceback, 0 pending**. Two of the traceback cases also pin the files left behind. `cli_audit` counts the classes both ways, so a case cannot be added without being classified |
+| **the sorting stage** | **done, byte-identical on all six corpora** | `equivalence.sh stage sort`: **52 of 52**. `sorted.fastq` and `logfile.txt` |
+| **the clustering engine, `--t 1`** | **done, byte-identical on all six corpora** | carried across from isONclust with four deliberate changes; `--symmetric_map_align_thresholds` written from scratch |
+| **`--t > 1`** | **done, byte-identical on all six corpora** | `parallelize.rs`, including every per-iteration `<n>/pre_clusters.csv` and `<n>/cluster_origins.csv`. The batch counts, the merge walk and the iteration count all match |
+| **`--m`/`--s`, `--top_reads`, `--sample_size`** | **done, byte-identical on all six corpora** | `pyrandom.rs` reproduces CPython's MT19937 and `random.sample`'s two branches; `tests/pyrandom_oracle.rs` replays 64 recorded draws, both branches, 6 seeds including a negative one and two above 2³² |
+| **`--consensus`** | **done, byte-identical on all six corpora** | spoa **linked** (10/10), RC detection (12/12 recorded identity calls), edlib HW (96/96 recorded calls), the trimming arithmetic, and the medaka and racon drivers with the re-trim loop |
+| **`write_fastq`** | **done, byte-identical on all six corpora** | including *Finding 6*: it creates `0.fastq`, fails the first lookup, and leaves a zero-byte file. The goldens record exactly that |
+| **THE PORT IS FEATURE-COMPLETE** | **55 of 55 output cases and 46 of 46 CLI cases, on ALL SIX corpora** | every case in `bench/cases.tsv`, including four corpora that came from bug reports against the reference. Read it with *Verification gaps* — the matrix is one invocation per case, and *Finding 18* is what that misses |
 | stage oracles | **written and exercised on both corpora; the replay half waits for the port** | `bench/dump_reference.py` covers six stages, three of them new here. *Finding 25* has the coverage counts |
-| corpora | **done, 2 committed, both measured for discriminating power** | *The corpora*, *Finding 19* |
+| corpora | **6 registered, 2 committed** | *The corpora*. Four arrived from bug reports against the reference and closed the depth and length axes; `bench/corpora_fetch.local.sh` (gitignored) rebuilds the uncommitted four with pinned sha256s |
 | case matrix swept on both corpora | **done** | 24 cases; `Supplementary_File1_reads.fastq` gives 19 distinct results and 1 unintended collision, `sample_h1.fastq` gives 12 and 8 |
 | repository slimmed | **not started; analysed, and the tooling is in the tree and runs** | `tools/repo-slim/analyze.sh` reports 520.1 MB of 530.8 MB strippable (98.0%), 15 paths, and writes a reviewed `removal-paths.txt`. *Repo hygiene* |
 
@@ -778,37 +778,69 @@ not a test. `top_huge` keeps that no-op path covered on purpose.
 
 ### The corpora
 
-Only two exist and both are committed. That is a smaller registry than any of the other three ports
-had, and it is a gap, not a virtue.
+**Six, of which two are committed.** For most of this port there were two, both committed, both from
+this repository's own `test/` directory — a smaller registry than any of the other three ports had,
+and named in four separate findings as the port's largest measurement gap. Four more arrived from
+two bug reports against the reference, and they are worth more than their read counts suggest.
 
-| corpus | reads | truth | what it is for |
-| --- | --- | --- | --- |
-| `sample_h1.fastq` | 280 | one haddock amplicon, `h1` in every header | committed, 390 KB. The README install check, `.travis.yml`, CI. Median length 632, and one read of length 14 that exercises the `2*k` filter |
-| `Supplementary_File1_reads.fastq` | 3 000 | three species — cod, haddock, whiting — tagged `c1`/`h1`/`w1` in every header | committed, 5.2 MB. **Develop against this.** Median length 816. Discriminates 19 distinct results out of 24 cases, reaches the reverse-complement merge path (4 draft centers, one merged), and reaches primer trimming with the committed IUPAC primer file |
+| corpus | reads | median | committed | what it adds |
+| --- | --- | --- | --- | --- |
+| `smoke` (`sample_h1.fastq`) | 280 | 632 | yes, 390 KB | the README install check and CI. One read of length 14 that exercises the `2*k` filter, and the **only** corpus that reaches *Finding 18* |
+| `sup` (`Supplementary_File1_reads.fastq`) | 3 000 | 816 | yes, 5.2 MB | the paper's supplementary data. Three species, `c1`/`h1`/`w1`. **Develop against this.** Reaches the reverse-complement merge path and primer trimming |
+| four **private** corpora | 2 500 – 5 000 each | 736 – ~1 400 | **no, and they must not be** | collaborator data, unpublished. See below |
+
+**The four private corpora are not described here, and nothing derived from them is in this
+repository.** They were supplied by collaborators, they may not be published, and that includes their
+species, their run and file names, the paths they came from, and their goldens — whose `sample/`
+directory holds verbatim read heads and full ONT accessions carrying flow-cell and sample
+identifiers. They are registered in `bench/corpora.local.tsv` and their goldens live under
+`bench/golden/private/`, both gitignored. `resolve_corpus` reads the local registry after the public
+one, so the harness treats them exactly like any other corpus.
+
+What may be said publicly is a statement about the **port**, not about the data:
+
+* it is byte-identical on **six** corpora rather than two — 330 output cases and 276 CLI cases;
+* those six span **four read-length regimes** rather than two, including one where every read is over
+  1 000 bp so the `2*k` and homopolymer-compressed guards never fire — the inverse of `smoke`, whose
+  shortest read is 14 bp;
+* one of them carries accessions containing underscores, which no public corpus here can produce and
+  which `strip_score`'s `rsplit` has to survive;
+* one of them brought its own IUPAC primer file, making it the second corpus on which primer trimming
+  does anything at all, and the first whose primers belong to its own reads. That is the gap
+  *Finding 25* describes;
+* measured discriminating power over the 55 cases: the best of the private four gives 47 distinct
+  results with a largest collision group of 4, against `sup`'s 46 and 4 and `smoke`'s 34 and **12**.
+  Three of the private four are measurably identical to each other — one regime sampled three times,
+  not three regimes.
+
+`smoke`'s group of twelve is *Finding 19* expressed as one number: twelve cases whose output is
+byte-identical there, so twelve parameters could all be broken at once and the corpus would stay
+green.
+
+So: **six corpora, roughly four regimes**, and the registry's remaining hole is unchanged — there is
+no PacBio corpus, public or private, and `--isoseq` is a supported preset with no data behind it.
 
 **One more is available for free.** `test/terncytb_200.fastq` — 200 real ONT reads of a Cytb/16S
 amplicon, median length 428 — was committed in `a2128c8` and dropped in `11c516f`, and it is 214 KB.
 It is the only strippable blob in this history that is **not** already archived from the isONclust
-exercise (*Repo hygiene*), so it has to be handled either way, and restoring it as a third corpus
-costs less than archiving it. It adds a length axis (428 / 632 / 816) and a third amplicon. It does
-not discriminate `--symmetric_map_align_thresholds`.
+exercise (*Repo hygiene*), so it has to be handled either way, and restoring it costs less than
+archiving it. It would fill the one length gap the new corpora do not: everything here is now either
+under 900 or over 1 000.
 
-**What is missing, in priority order:**
+**What is still missing, in priority order:**
 
-1. **A PacBio corpus.** `--isoseq` is a supported preset with no data behind it. It resolves to
-   `--k 15 --w 50`, which the sweep does exercise on ONT reads, but nothing checks the path on data it
-   was designed for.
+1. **A PacBio corpus.** `--isoseq` is a supported preset with no data behind it. All six corpora are
+   ONT. It resolves to `--k 15 --w 50`, which the sweep does exercise on ONT reads, but nothing
+   checks the path on data it was designed for. This is now the biggest hole by some distance.
 2. **A corpus with a quality spread.** `--q 0` and the default `--q 7` produce identical output on
-   both corpora, so the quality filter is only observable at `--q 8` and above, where it is already
-   discarding most of the data.
-3. **A depth axis.** 3 000 reads is one point. Method rule: *a conclusion at one depth is not a
-   conclusion*. `--sample_size`, `--abundance_ratio` and `--t` all interact with depth and none of
-   them has been measured at more than one.
-4. **Reads with primers actually present at both ends in known positions**, so primer trimming can be
-   checked against an answer rather than against the reference's own output.
+   `smoke` and `sup`, so the quality filter is only observable at `--q 8` and above, where it is
+   already discarding most of the data. The four new corpora have not been measured for this.
+3. **Reads with primers at KNOWN positions**, so trimming can be checked against an answer rather
+   than against the reference's own output. the primer-bearing private corpus is closer than anything before it and still not
+   this.
 
-`bench/corpora.tsv` should register these as they arrive; goldens are per-corpus and the manifest
-records the corpus sha256, so adding one is cheap and changing one is not.
+The depth and length axes, which were points 3 and 4 on this list for most of the port, are closed:
+280 / 2 481 / 3 000 / 5 000 reads, and minimum read lengths of 14 / 69 / 183 / 1 000.
 
 ### Stage-level oracles are required, not optional
 
@@ -1719,7 +1751,7 @@ limits.
 | gap | why it matters | what would close it |
 | --- | --- | --- |
 | **the case matrix is one invocation per case** | *Finding 18*'s divergence was invisible to all 55 output cases and was caught only by a CLI case, because reaching it needs two commands. `--use_old_sorted_file` and *Finding 23* are the same shape | multi-invocation output cases: sort-then-reuse at a different `--k`, a failed run followed by a retry, `write_fastq` over a clustering from a different `--t` |
-| **the corpora registry is thin** | four separate behaviours — *Findings 19, 25, 26* and edlib's multiple-location tie-break — cannot be observed on either committed corpus. `sample_h1` is the only one that reaches *Finding 18*, which is the clearest evidence that the registry, not the corpus size, is the variable | a PacBio/isoseq corpus, a quality-spread corpus, and a depth axis; and restoring the 428 bp corpus dropped in `11c516f` |
+| **no PacBio corpus** | all six are ONT. `--isoseq` is a supported preset with no data behind it. The registry grew from two to six and closed the depth and length axes, but not this one | a PacBio/isoseq corpus; a quality-spread corpus; and restoring the 428 bp corpus dropped in `11c516f`, which fills the one length gap left (everything is now under 900 or over 1 000) |
 | **edlib's multiple-location ordering is a guess** | 96 of 96 recorded calls pass and **none** returns more than one location, so `trace_start`'s tie-break is unexercised. `tests/edlib_oracle.rs` asserts the count is zero so this cannot become silent | a corpus or hand-built case producing a tied infix alignment, measured against real edlib |
 | **`ALLOW_STALE_BIN` is the only guard against a stale binary** | see *Defect 5* | CI that always builds before it verifies |
 
@@ -1730,19 +1762,72 @@ limits.
 - Unpin `parasail==1.2.4` in `setup.py` and `requirements.txt` (*Finding 3*).
 - Retire `.travis.yml`. It runs Python 3.6 on Travis with `medaka=0.11.5`; none of those three things
   is obtainable. Replace with CI on Linux and macOS, x86_64 and arm64.
+- **Write the Rust build section of the README**, and state its build dependencies: cmake, libclang
+  and pkg-config, needed since `parasail-ffi` became the default (*Performance*). A user who hits a
+  cmake error with no documentation saying cmake is required is in exactly the position this port
+  exists to get them out of. `--no-default-features` builds with a Rust toolchain alone and is the
+  fallback to document alongside it.
 - The `Dockerfile` pins `python:3.6` and `medaka==1.5.0` and copies biocontainer binaries by digest.
   Once the port exists the Dockerfile is a much smaller thing — a Rust build stage plus, optionally,
   the two polishers.
 
-### Performance and structure, once exact
+### Performance — the port is SLOWER than the reference on long reads
 
-Deliberately last, because performance is not this port's specification. The reference clusters
-3 000 reads in 1.6 s; the interesting number is not there.
+`parasail-ffi` is off by default. The argument in `Cargo.toml` was: this port is about installation
+working at all, the FFI costs a cmake-and-libclang build dependency, and the corpora are amplicons —
+3 000 reads clustering in 1.6 seconds, so nobody is waiting. The premise was measured on `smoke` and
+`sup`, and a private corpus of long reads refutes it.
 
-Where the time actually is, unprofiled but predictable from the other three ports: `spoa` on large
-clusters, and `medaka`, which is a neural network and will dominate any run that uses it. Neither is
-addressed by porting the Python. Profile before believing any of that — method point 5 — and note that
-`--max_seqs_for_consensus` already exists as the knob for the first.
+Measured, `--ont --t 1`, 5 000 reads of 1 000–1 858 bp:
+
+| | a 5 000-read private corpus, median ~1 400 bp | the full 83 817-read file it was taken from, extrapolated |
+| --- | --- | --- |
+| the reference (Python calling parasail's SIMD C) | **10.3 s** | ~3 min |
+| the port, default features | **24.9 s** | ~7 min |
+| the port, `--features parasail-ffi` | **4.1 s** | ~1 min |
+
+So on the data a user actually reported a bug against, **a Rust port is two and a half times slower
+than the Python it replaces**, because the Python delegates to vectorised C and `parasail.rs` is
+scalar. On `sup` this is invisible: 816 bp reads, 1.6 s either way. "Nobody is waiting" was a
+statement about two corpora from this repository's own `test/` directory, generalised to every user.
+
+**Decided: the FFI is on by default**, matching the isONclust port, which had already integrated the
+same C library for the same reason. `default = ["parasail-ffi"]`.
+
+The trade that was weighed:
+
+* **default off:** `cargo install` needs only a Rust toolchain. Slower than the Python above
+  ~1 000 bp.
+* **default on:** needs cmake, libclang and pkg-config — and `libparasail-sys`'s `build.rs` shells
+  out to `git` to fetch parasail, so it wants network at build time too.
+
+Four new ways for a build to fail is not nothing in a port whose stated goal is that installs stop
+failing. It is bounded, though: these are *build-time* dependencies of a binary that ships without
+them, where the failures this port exists to remove are *install-time* dependency-resolution
+failures in a conda solve that the end user has to debug. The remaining honest option — vectorise
+`parasail.rs`, no install cost, exact by the same argument — is real work and stays open.
+
+**The install documentation must now say cmake, libclang and pkg-config.** There is no Rust build
+section in the README yet; when one is written, this belongs in it. *Deferred improvements*.
+
+### One dispatcher, because the feature did not mean what its name said
+
+Flipping the default exposed a second thing: `--features parasail-ffi` only ever applied to the
+**clustering** call site. The dispatcher lived privately in `blockalign.rs`, and
+`consensus::identity` — the reverse-complement path, the second parasail call site, the one with
+`opening_penalty=3` instead of the binned 5/4/3/2 — called `parasail::semiglobal` directly and
+stayed scalar however the feature was set.
+
+Not a correctness bug, because the two implementations agree; the oracles cover both. But a build
+flag that covers half the call sites it names is a trap, and the half it missed is the one a reader
+would assume was covered. `src/aligner.rs` is now the only dispatcher and both call sites go through
+it — which also means the RC path gets the speedup, and that adding a third call site that bypasses
+it re-creates the bug.
+
+Beyond that, and unprofiled: `spoa` on large clusters, and `medaka`, which is a neural network and
+will dominate any run that uses it. Neither is addressed by porting the Python. Profile before
+believing any of that — method point 5 — and note that `--max_seqs_for_consensus` already exists as
+the knob for the first.
 
 One structural improvement is worth naming now because the port gets it for free: the port can hold
 `sorted.fastq` in memory rather than writing it and reading it back, **and must not**, because the

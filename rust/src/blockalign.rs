@@ -24,21 +24,11 @@
 
 use crate::parasail::Scoring;
 
-/// The alignment engine.
-///
-/// Both paths are exact and produce identical output; `parasail-ffi` is simply
-/// 13-16x faster because it is parasail's own SIMD C library rather than our
-/// scalar reimplementation of it. See `parasail_ffi.rs`.
+/// The alignment engine. One dispatcher for the whole port -- see `aligner.rs`
+/// for which implementation this resolves to and why it is a build-time choice.
 #[inline]
 fn semiglobal(s1: &[u8], s2: &[u8], sc: Scoring) -> crate::parasail::Alignment {
-    #[cfg(feature = "parasail-ffi")]
-    {
-        crate::parasail_ffi::semiglobal(s1, s2, sc)
-    }
-    #[cfg(not(feature = "parasail-ffi"))]
-    {
-        crate::parasail::semiglobal(s1, s2, sc)
-    }
+    crate::aligner::semiglobal(s1, s2, sc)
 }
 
 /// `parasail_block_alignment`'s return: the two gapped strings and the ratio.

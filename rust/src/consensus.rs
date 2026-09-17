@@ -106,7 +106,10 @@ const RC_SCORING: parasail::Scoring = parasail::Scoring {
 /// against it — an end-to-end overlap of two sequences of very different lengths
 /// scores low even where they agree perfectly.
 fn identity(s1: &str, s2: &str) -> f64 {
-    let aln = parasail::semiglobal(s1.as_bytes(), s2.as_bytes(), RC_SCORING);
+    // `aligner::`, not `parasail::`. This is the SECOND parasail call site and
+    // it used to call the scalar implementation directly, which meant
+    // --features parasail-ffi silently did not apply to it. See aligner.rs.
+    let aln = crate::aligner::semiglobal(s1.as_bytes(), s2.as_bytes(), RC_SCORING);
     let (a1, a2) = match align::ops_to_seq(&aln.ops, s1.as_bytes(), s2.as_bytes()) {
         Some(p) => p,
         None => return 0.0,

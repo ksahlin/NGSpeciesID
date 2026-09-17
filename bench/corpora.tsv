@@ -25,17 +25,32 @@
 # changes nothing; on `sup` it gives 85 clusters against the default's 49.
 # See PORTING.md, Finding 19. A green run on `smoke` alone is not coverage.
 #
-# WHAT IS MISSING, and it is the largest measurement gap in this port
-# -------------------------------------------------------------------
-#   * A PacBio corpus. --isoseq is a supported preset with no data behind it.
-#   * A corpus with a quality spread. On BOTH corpora --q 0 gives byte-identical
-#     output to the default --q 7, so the filter is only observable from --q 8
-#     up, where it is already discarding most of the data.
-#   * A depth axis. 280 and 3000 reads are two points, and method rule "a
-#     conclusion at one depth is not a conclusion" applies to --sample_size,
-#     --abundance_ratio and --t, none of which has been measured at more than
-#     one depth.
-#   * Reads with primers at known positions, so trimming can be checked against
+# PRIVATE CORPORA ARE NOT REGISTERED HERE
+# ---------------------------------------
+# The port is additionally verified against four corpora supplied by
+# collaborators. They are NOT ours to publish and nothing derived from them is
+# in this repository: not the reads, not the goldens (whose sample/ directory
+# holds verbatim read heads and full ONT accessions), not the file names, and
+# not the paths they came from.
+#
+# Register them in `bench/corpora.local.tsv`, same five columns, which is
+# gitignored and which resolve_corpus reads after this file. Their goldens go
+# under `bench/golden/private/`, also gitignored. Nothing else changes: the
+# harness treats a local corpus exactly like a registered one.
+#
+# What may be said about them publicly is only what is true of the PORT: it is
+# byte-identical on six corpora rather than two, across four read-length
+# regimes rather than two. See PORTING.md, *The corpora*.
+#
+# WHAT IS MISSING
+# ---------------
+#   * A PacBio corpus. --isoseq is a supported preset with no data behind it,
+#     and every corpus available here -- public or private -- is ONT. This is
+#     the biggest hole by some distance.
+#   * A corpus with a quality spread. On smoke and sup, --q 0 gives byte-
+#     identical output to the default --q 7, so the filter is only observable
+#     from --q 8 up, where it is already discarding most of the data.
+#   * Reads with primers at KNOWN positions, so trimming can be checked against
 #     an answer rather than against the reference's own output.
 #
 # ONE MORE IS AVAILABLE FOR FREE: test/terncytb_200.fastq, 200 real ONT reads of
@@ -48,3 +63,4 @@
 # name	path	reads	preset	purpose
 smoke	test/sample_h1.fastq	280	ont	committed, 390 KB. The README install check and .travis.yml's fixture. One haddock amplicon, `h1` in every header. Median length 632, and one read of length 14 that exercises the 2*k filter. BLIND TO FIVE PARAMETERS -- see Finding 19
 sup	test/Supplementary_File1_reads.fastq	3000	ont	committed, 5.2 MB. The paper's Supplementary Data 1: cod, haddock and whiting on a Flongle, tagged c1/h1/w1 in every header. DEVELOP AGAINST THIS. Median length 816. 19 distinct results of 24 cases; reaches the reverse-complement merge path (4 draft centers, one merged) and primer trimming with the committed IUPAC primer file
+#
