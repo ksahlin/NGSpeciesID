@@ -1045,6 +1045,43 @@ The port must reproduce the exit code. Whether it reproduces the traceback is a 
 the fix — treat `--consensus` without a polisher as "draft consensus only", which is what a user
 plainly means, and reject a polisher without `--consensus` — belongs in *Deferred improvements*.
 
+### Finding 28 — `racon` is not reproducible across architectures, so `--consensus` goldens are platform-local
+
+Measured by CI, on `linux-64`, against goldens recorded on `osx-arm64`, with **identical versions of
+everything**: spoa 4.1.5, racon 1.5.0, minimap2 2.31-r1302, medaka 2.2.2, CPython 3.12.14.
+
+41 of 55 cases matched. The 14 that did not are exactly the `--consensus` cases, and the file lists
+say where the divergence starts:
+
+| file | same across platforms? |
+| --- | --- |
+| `consensus_reference_<id>.fasta` — the **spoa** draft | **yes**, every case |
+| `read_alignments_it_0.paf` — **minimap2**'s first alignment | **yes** |
+| `racon_polished_it_0.fasta` — **racon**'s first output | **no** |
+| everything after it | no, inheriting the above |
+
+So the port's own work is byte-identical across architectures — clustering, the spoa draft (which is
+this repository's linked C++, not a subprocess), the trimming arithmetic — and **racon, given the
+same input and the same version, produces different output on x86_64 Linux than on arm64 macOS**.
+
+Two consequences, and neither is a defect in the port:
+
+1. **A `--consensus` golden is only valid on the platform that recorded it.** `bench/golden/*` was
+   recorded on macOS arm64 and is the contract *there*. CI therefore records on its own runner and
+   verifies against that, which asks the question that actually matters — does the port match the
+   reference *on this machine* — instead of "is Linux byte-identical to macOS", which is a question
+   about racon.
+2. **The port's byte-identity claim is per-platform for the polished output**, and unconditional for
+   everything upstream of racon. That distinction belongs in the release notes; a user who moves a
+   pipeline between architectures will see consensus sequences change, and that was already true of
+   the Python.
+
+Not yet known: whether this is racon's own non-determinism (threading, hash ordering) or a genuine
+x86/arm difference such as SIMD or floating-point contraction. Running racon twice on one machine
+would separate those, and *Repo hygiene*'s reproducibility check already showed it is deterministic
+**within** a platform — three runs differing only in captured stderr timings. So the architecture is
+the variable. Worth reporting upstream only after that second measurement.
+
 ### Finding 27 — `--top_reads` without `--sample_size` silently clusters zero reads
 
 ```python

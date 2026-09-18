@@ -184,10 +184,23 @@ jobs:
   # cases (spoa, racon, minimap2, medaka), the write_fastq cases whose INPUT the
   # reference has to produce, and the CLI matrix.
   #
-  # Continues on error for now, and deliberately: the goldens were recorded
-  # against one set of external-tool versions, and conda on linux-64 may resolve
-  # others -- a spoa bump changes every consensus_reference_*.fasta. Until that
-  # is pinned this job is evidence, not a gate. The `rust` job above is the gate.
+  # It RECORDS the goldens on the runner and then verifies against them, rather
+  # than comparing to the committed ones. That is deliberate and it is a
+  # correction: comparing Linux output to macOS-recorded goldens asks "is Linux
+  # output identical to macOS output", which is a question about racon, not
+  # about this port.
+  #
+  # Measured on the first run that got this far: with IDENTICAL tool versions
+  # (spoa 4.1.5, racon 1.5.0, minimap2 2.31-r1302, medaka 2.2.2, python
+  # 3.12.14), 41 cases matched and 14 did not -- every --consensus case. The
+  # differing files were all under racon_cl_id_*/, the spoa drafts
+  # (consensus_reference_*.fasta) matched everywhere, and read_alignments_it_0
+  # matched while racon_polished_it_0 did not. So racon produces different
+  # output on linux-64 than on osx-arm64 from the same input, and everything
+  # after it inherits that. See PORTING.md, Finding 28.
+  #
+  # Recording on the runner removes the confound and asks the real question:
+  # does the port match the reference ON THIS MACHINE.
   equivalence:
     name: Full equivalence vs the Python reference (Linux)
     runs-on: ubuntu-latest
@@ -236,9 +249,28 @@ jobs:
           REF_PYTHON="$CONDA_PREFIX/bin/python" NGSPECIESID_REQUIRE_PYTHON_ORACLE=1 \
             cargo test --locked --test phred_oracle --test pyfloat_oracle --test pyround_oracle
 
-      - name: Output matrix and CLI matrix, smoke corpus
+      # Record on this runner, verify against that. GOLDEN points at a scratch
+      # directory, NOT at bench/golden -- the committed goldens stay untouched
+      # and this job never proposes changes to them.
+      - name: Record goldens on this runner, then verify the port against them
         run: |
           eval "$(conda shell.bash hook)"; conda activate ngspeciesid-ref
           export REF_PYTHON="$CONDA_PREFIX/bin/python"
-          CORPUS=smoke GOLDEN="$PWD/bench/golden/smoke" bash bench/equivalence.sh verify
-          CORPUS=smoke GOLDEN="$PWD/bench/golden/smoke" bash bench/equivalence.sh cli verify
+          export GOLDEN="$RUNNER_TEMP/golden-linux"
+          mkdir -p "$GOLDEN"
+          CORPUS=smoke bash bench/equivalence.sh record
+          CORPUS=smoke bash bench/equivalence.sh verify
+          CORPUS=smoke bash bench/equivalence.sh cli record
+          CORPUS=smoke bash bench/equivalence.sh cli verify
+
+      # Separately, and NOT as a pass/fail: how far the committed goldens --
+      # recorded on macOS arm64 -- travel to this platform. A drop here is a
+      # statement about the external tools, not about the port, and it is worth
+      # seeing in the log rather than discovering during a release.
+      - name: How far the committed macOS goldens travel (informational)
+        continue-on-error: true
+        run: |
+          eval "$(conda shell.bash hook)"; conda activate ngspeciesid-ref
+          export REF_PYTHON="$CONDA_PREFIX/bin/python"
+          CORPUS=smoke GOLDEN="$PWD/bench/golden/smoke" bash bench/equivalence.sh verify \
+            | tail -1 || true
