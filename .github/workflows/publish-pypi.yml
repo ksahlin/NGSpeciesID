@@ -50,10 +50,31 @@ jobs:
       # The package must actually run, not merely build. setup.py ships
       # `scripts=['NGSpeciesID']`, so the entry point is a file that has to land
       # in bin/ and start.
-      - name: Install the built wheel and run it
+      #
+      # A CLEAN VENV, and WITH dependencies. This started as `pip install
+      # --no-deps --target ...` plus PYTHONPATH, which passed locally and failed
+      # here with `ModuleNotFoundError: No module named 'parasail'` -- because
+      # locally it ran under an interpreter that already had parasail and edlib,
+      # so `--target` isolated nothing. The local test was the flawed one.
+      #
+      # Installing with dependencies into a venv is also simply the better test:
+      # it is exactly what `pip install NGSpeciesID` does for a user, including
+      # resolving parasail and edlib from PyPI, and the entry point has to land
+      # in the venv's bin/ and start.
+      #
+      # NOTE THAT THIS PASSES ONLY BECAUSE THE RUNNER IS LINUX x86_64. The same
+      # command on Apple Silicon fails -- parasail publishes no ARM wheel, so pip
+      # compiles it from source and the build dies. Reproduced while writing this
+      # step. That is PORTING.md *Finding 3*, and it is why the README installs
+      # the libraries from bioconda and then runs `pip install --no-deps`. So
+      # this step asserts "the sdist and wheel are installable where PyPI has
+      # wheels for the dependencies", not "pip install works everywhere" -- which
+      # is not true and is documented as not true.
+      - name: Install the built wheel into a clean venv and run it
         run: |
-          python -m pip install --quiet --no-deps --target /tmp/wheeltest dist/*.whl
-          PYTHONPATH=/tmp/wheeltest python /tmp/wheeltest/bin/NGSpeciesID --version
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install --quiet dist/*.whl
+          /tmp/venv/bin/NGSpeciesID --version
 
       - uses: actions/upload-artifact@v4
         with:
