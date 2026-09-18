@@ -29,8 +29,29 @@ Four lines.
 | --- | --- | --- | --- |
 | `version` | 0.3.1 | 0.4.1 | |
 | `sha256` | `ddd378a6…` | `0800e5e3…` | of `v0.4.1.tar.gz`, computed from the downloaded tag archive |
-| `host: python` | >=3.10 | **>=3.12** | |
-| `run: python` | >=3.10 | **>=3.12** | |
+| `host: python` | >=3.10 | **>=3.12,<3.13** | |
+| `run: python` | >=3.10 | **>=3.12,<3.13** | |
+
+### The upper bound is not optional, and bioconda's CI proved it
+
+The first attempt used a bare `python >=3.12` and **failed bioconda's Linux test** while the
+autobump bot's PR, which kept `>=3.10`, passed everything. An open-ended floor lets the solver reach
+for 3.13 and 3.14 — it tried `python-3.14.0rc1` — and `python-edlib` publishes builds only up to
+3.13:
+
+```
+nothing provides _python_rc needed by python-3.14.0rc1
+edlib [1.1.2|1.2.0|1.2.1|1.2.3] conflicts with any installable versions previously reported
+```
+
+`medaka` 2.2.2 declares `python >=3.12,<3.13.0a0` for itself, so 3.12 is the environment in practice
+either way; `>=3.12,<3.13` simply states it and removes the solver's freedom to try interpreters the
+dependencies do not support.
+
+The lesson is narrow and worth keeping: **raising a floor without an upper bound is not a
+conservative change** in a package whose dependencies have per-interpreter builds.
+
+### The python floor itself
 
 The python floor is the only judgement call. `medaka` 2.2.x requires 3.12 anyway, so in practice the
 solve already pulled it — but more importantly, **before CPython 3.12 `sum()` over a set of floats is
