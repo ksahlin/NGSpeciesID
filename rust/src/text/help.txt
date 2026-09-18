@@ -1,0 +1,139 @@
+usage: NGSpeciesID [-h] [--version] [--debug]
+                   (--fastq FASTQ | --use_old_sorted_file) [--t NR_CORES]
+                   [--d PRINT_OUTPUT] [--q QUALITY_THRESHOLD] [--ont]
+                   [--isoseq] [--consensus]
+                   [--abundance_ratio ABUNDANCE_RATIO]
+                   [--rc_identity_threshold RC_IDENTITY_THRESHOLD]
+                   [--max_seqs_for_consensus MAX_SEQS_FOR_CONSENSUS]
+                   [--medaka | --racon] [--medaka_model MEDAKA_MODEL]
+                   [--medaka_fastq] [--racon_iter RACON_ITER]
+                   [--remove_universal_tails | --primer_file PRIMER_FILE]
+                   [--primer_max_ed PRIMER_MAX_ED] [--trim_window TRIM_WINDOW]
+                   [--m TARGET_LENGTH] [--s TARGET_DEVIATION]
+                   [--sample_size SAMPLE_SIZE] [--top_reads] [--seed SEED]
+                   [--k K] [--w W] [--min_shared MIN_SHARED]
+                   [--mapped_threshold MAPPED_THRESHOLD]
+                   [--aligned_threshold ALIGNED_THRESHOLD]
+                   [--symmetric_map_align_thresholds]
+                   [--batch_type BATCH_TYPE] [--min_fraction MIN_FRACTION]
+                   [--min_prob_no_hits MIN_PROB_NO_HITS]
+                   [--outfolder OUTFOLDER]
+                   {write_fastq} ...
+
+Reference-free clustering and consensus forming of targeted ONT or PacBio
+reads
+
+positional arguments:
+  {write_fastq}         sub-command help
+    write_fastq         a help
+
+options:
+  -h, --help            show this help message and exit
+  --version             show program's version number and exit
+  --debug               Enable debug logging (default: False)
+  --fastq FASTQ         Path to consensus fastq file(s) (default: None)
+  --use_old_sorted_file
+                        Using already existing sorted file if present in
+                        specified output directory. (default: False)
+  --t NR_CORES          Number of cores allocated for clustering (default: 8)
+  --d PRINT_OUTPUT      For debugging, prints status of clustering and
+                        minimizer database every p reads processed. (default:
+                        10000)
+  --q QUALITY_THRESHOLD
+                        Filters reads with average phred quality value under
+                        this number (default = 7.0). (default: 7.0)
+  --ont                 Clustering of ONT transcript reads. (default: False)
+  --isoseq              Clustering of PacBio Iso-Seq reads. (default: False)
+  --consensus           After clustering, (1) run spoa on all clusters, (2)
+                        detect reverse complements, (3) run medaka. (default:
+                        False)
+  --abundance_ratio ABUNDANCE_RATIO
+                        Threshold for --consensus algorithm. Consider only
+                        clusters larger than a fraction of number of total
+                        reads (default 0.1) (default: 0.1)
+  --rc_identity_threshold RC_IDENTITY_THRESHOLD
+                        Threshold for --consensus algorithm. Define a reverse
+                        complement if identity is over this threshold (default
+                        0.9) (default: 0.9)
+  --max_seqs_for_consensus MAX_SEQS_FOR_CONSENSUS
+                        Maximum number of seqs to form consensus with spoa
+                        [INT] (default = -1, which means to use all sequences
+                        available regardless of cluster size). (default: -1)
+  --medaka              Run final medaka polishing algorithm. (default: False)
+  --racon               Run final racon polishing algorithm. (default: False)
+  --medaka_model MEDAKA_MODEL
+                        Set specific medaka model. (default: )
+  --medaka_fastq        Request Medaka to output a FASTQ file, instead of
+                        FASTA (default: False)
+  --racon_iter RACON_ITER
+                        Number of times to run racon iteratively (default: 2)
+  --remove_universal_tails
+                        Remove universal tails "TTTCTGTTGGTGCTGATATTGC" and
+                        "ACTTGCCTGTCGCTCTATCTTC" after the spoa consensus step
+                        and before the revers complement detection. (default:
+                        False)
+  --primer_file PRIMER_FILE
+                        Path to file with primers. Primers are removed after
+                        the spoa consensus step and before the revers
+                        complement detection. (default: )
+  --primer_max_ed PRIMER_MAX_ED
+                        Threshold edit distance for finding bracore in spoa
+                        consensus (default: 2)
+  --trim_window TRIM_WINDOW
+                        Window size of how many bases to look for barcodes
+                        (default 150 bases in beginning and end of consensus).
+                        (default: 150)
+  --m TARGET_LENGTH     Intended amplicon length. Invoked to filter out reads
+                        with length greater than m + s or smaller than m - s
+                        (default = 0 which means no filtering) (default: 0)
+  --s TARGET_DEVIATION  Maximum allowed amplicon-length deviation. Invoked to
+                        filter out reads with length greater than m + s or
+                        smaller than m - s (default = 0 which means no
+                        filtering) (default: 0)
+  --sample_size SAMPLE_SIZE
+                        Use sample_size reads in the NGSpecies pipeline
+                        (default = 0 which means all reads considered). If
+                        sample size is larger than actual number of reads, all
+                        reads will be used. (default: 0)
+  --top_reads           Use the top --sample_size reads instead of a random
+                        selection (default = false, which means random reads
+                        considered). (default: False)
+  --seed SEED           Random seed for the --sample_size subsample, which is
+                        the only randomness in the tool. Fixed by default so
+                        runs are reproducible; change it to draw a different
+                        subsample. (default: 0)
+  --k K                 Kmer size (default: 13)
+  --w W                 Window size (default: 20)
+  --min_shared MIN_SHARED
+                        Minmum number of minimizers shared between read and
+                        cluster (default: 5)
+  --mapped_threshold MAPPED_THRESHOLD
+                        Minmum mapped fraction of read to be included in
+                        cluster. The density of minimizers to classify a
+                        region as mapped depends on quality of the read.
+                        (default: 0.7)
+  --aligned_threshold ALIGNED_THRESHOLD
+                        Minmum aligned fraction of read to be included in
+                        cluster. Aligned identity depends on the quality of
+                        the read. (default: 0.4)
+  --symmetric_map_align_thresholds
+                        Apply mapped threshold and aligned threshold to
+                        fraction of cluster representative which maps onto the
+                        read (default: False)
+  --batch_type BATCH_TYPE
+                        In parrallel mode, how to split the reads into chunks
+                        "total_nt", "nr_reads", or "weighted" (default:
+                        total_nt) (default: total_nt)
+  --min_fraction MIN_FRACTION
+                        Minmum fraction of minimizers shared compared to best
+                        hit, in order to continue mapping. (default: 0.8)
+  --min_prob_no_hits MIN_PROB_NO_HITS
+                        Minimum probability for i consecutive minimizers to be
+                        different between read and representative and still
+                        considered as mapped region, under assumption that
+                        they come from the same transcript (depends on read
+                        quality). (default: 0.1)
+  --outfolder OUTFOLDER
+                        A fasta file with transcripts that are shared between
+                        samples and have perfect illumina support. (default:
+                        None)

@@ -1,0 +1,12 @@
+# ngspeciesid-ref  on Darwin 25.5.0 arm64
+Python 3.12.14
+medaka                     2.2.2            py312h3bb865a_0               bioconda
+minimap2                   2.31             h6bd33b9_0                    bioconda
+numpy                      2.5.3            py312hff34920_0               conda-forge
+parasail-python            1.3.4            py312h7d4aa78_6               bioconda
+python                     3.12.14          hd05a0c4_3_cpython            conda-forge
+python-edlib               1.3.9.post1      py312h2ee7600_3               bioconda
+pytorch                    2.9.1            cpu_generic_py312_h3669d14_5  conda-forge
+racon                      1.5.0            hda5e58c_8                    bioconda
+samtools                   1.24             h36b3a25_1                    bioconda
+spoa                       4.1.5            h158e17b_0                    bioconda

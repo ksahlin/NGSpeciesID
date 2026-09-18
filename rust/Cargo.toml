@@ -1,0 +1,102 @@
+[package]
+name = "ngspeciesid"
+# Cargo requires semver. The user-visible version string is NOT this: it lives
+# in src/text/version.txt, extracted verbatim from the recorded golden, and is
+# what `--version` prints. Do not "fix" --version to read CARGO_PKG_VERSION --
+# the two are allowed to drift and the golden is the contract.
+version = "0.4.0"
+edition = "2021"
+# 1.88, and NOT the 1.85 the sibling ports use.
+#
+# The original value was 1.85, chosen so that one toolchain builds isONcorrect,
+# isONform, isONclust and this. That property died the moment this port started
+# linking spoa (ce71f22): spoa pulls in `cxx`, which requires rustc 1.88. The
+# claim then sat here for several commits being false -- every local build used
+# a much newer toolchain, so nothing noticed, and `rust-version` is only
+# enforced when the toolchain is actually old.
+#
+# CI caught it on its first run, by pinning to this declared MSRV rather than to
+# `stable`. That is the whole reason it pins: a floor nobody stands on is not a
+# floor. The modules carried across from the sibling ports (parasail.rs,
+# align.rs) still need only 1.82 -- the constraint is entirely spoa's.
+#
+# RECHECK THIS WHENEVER A DEPENDENCY IS ADDED OR BUMPED. `cargo build` on a
+# modern toolchain cannot tell you it is wrong.
+rust-version = "1.88"
+description = "Clustering and consensus of long-read amplicon data (Rust port of NGSpeciesID)"
+license = "GPL-3.0"
+
+# The binary must be named exactly `NGSpeciesID`. Capitals in the middle, and
+# macOS is case-insensitive by default, so a wrong spelling resolves locally and
+# fails the first time it meets an ext4 filesystem. isONform's CI lost a day to
+# exactly this.
+[[bin]]
+name = "NGSpeciesID"
+path = "src/main.rs"
+
+[features]
+# parasail's own C library, linked through FFI. Exact by construction -- it IS
+# the implementation the reference calls.
+#
+# ON BY DEFAULT, matching the isONclust port. This reverses the original choice
+# here, which was argued as: this port is about installation working at all
+# (PORTING.md, Goal), the FFI costs a cmake-and-libclang build dependency, and
+# the corpora are amplicons -- 3 000 reads clustering in 1.6 seconds, so nobody
+# is waiting.
+#
+# The last clause was measured on the two corpora in this repository's own
+# `test/` directory, and real user data refuted it. On a private long-read
+# corpus (5 000 ONT reads of 1 000-1 858 bp, from a reported bug), `--ont --t 1`:
+#
+#     the Python reference (which calls this same C)   10.3 s
+#     this port, scalar                                24.9 s
+#     this port, FFI                                    4.1 s
+#
+# A Rust port 2.4x slower than the Python it replaces is not a tradeoff anyone
+# chose. At 816 bp the effect is invisible, which is why the original default
+# looked reasonable and was not.
+#
+# The pure-Rust `parasail.rs` stays, is equally exact -- 18 633 alignments
+# identical, CIGAR and ratio, in the isONclust port -- and is one
+# `--no-default-features` away for a build without cmake, libclang, pkg-config
+# and a network-fetching build.rs.
+default = ["parasail-ffi"]
+parasail-ffi = ["dep:libparasail-sys"]
+
+[dependencies]
+libparasail-sys = { version = "0.2", optional = true }
+# Hashing for the hot integer-keyed maps. The minimizer database is looked up
+# once per minimizer per read with a u64 key, and SipHash's strength buys
+# nothing there while costing measurably. Safe with respect to byte-identity
+# only because nothing depends on these maps' iteration order -- see
+# cluster::Postings.
+rustc-hash = "2.1.3"
+# Posting lists in the minimizer database, which are overwhelmingly tiny: most
+# keys hold exactly one representative id. `SmallVec<[u32; 2]>` is the same 24
+# bytes as `Vec<u32>`, so the table does not grow, and most of those heap blocks
+# simply stop existing.
+smallvec = "1.15"
+# spoa-sys, NOT the `spoa` convenience crate.
+#
+# `spoa 0.2.1` does not compile on aarch64 Linux: it casts sequence pointers
+# `as *const i8` while spoa-sys correctly declares them `*const c_char`, and
+# c_char is u8 there. CI found it on ARM Linux; every development machine here
+# is a target where c_char is i8, so it was invisible locally. src/spoa.rs
+# wraps the six functions this port uses, with casts that are right everywhere.
+spoa-sys = "0.2.1"
+cxx = "1"
+
+# Lint intent, pinned so it does not depend on which clippy you happen to run.
+#
+# CI pins the toolchain to the MSRV (1.88) and a developer here was on 1.98.
+# `uninlined_format_args` sits in a different lint group in those two releases,
+# so `cargo clippy -D warnings` was clean locally and failed in CI on five
+# sites -- a whole class of "green here, red there" that costs a push-and-wait
+# cycle each time. Stating the lint makes both versions agree.
+[lints.clippy]
+uninlined_format_args = "warn"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

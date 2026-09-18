@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "<PATH>/NGSpeciesID", line <LINE>, in <module>
+    write_fastq(args)
+  File "<PATH>/NGSpeciesID", line <LINE>, in write_fastq
+    seq, qual = reads[acc]
+                ~~~~~^^^^^
+KeyError: 'c948601e-1bd9-4039-94c5-3d8c741df65f'

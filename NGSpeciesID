@@ -194,7 +194,7 @@ def write_fastq(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Reference-free clustering and consensus forming of targeted ONT or PacBio reads", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--version', action='version', version='%(prog)s 0.3.2')
+    parser.add_argument('--version', action='version', version='%(prog)s 0.4.0')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     reads_file = parser.add_mutually_exclusive_group(required=True)
     reads_file.add_argument('--fastq', type=str, help='Path to consensus fastq file(s)')

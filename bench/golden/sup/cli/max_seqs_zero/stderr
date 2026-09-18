@@ -1,0 +1,17 @@
+Starting Clustering: 3000 reads
+Finished Clustering: 30 clusters formed
+Starting Consensus creation and polishing
+Traceback (most recent call last):
+  File "<PATH>/NGSpeciesID", line <LINE>, in <module>
+    main(args)
+  File "<PATH>/NGSpeciesID", line <LINE>, in main
+    centers = consensus.form_draft_consensus(clusters, representatives, sorted_reads_fastq_file, work_dir, abundance_cutoff, args)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/consensus.py", line <LINE>, in form_draft_consensus
+    center = run_spoa(reads_path_name, os.path.join(work_dir,"spoa_tmp.fa"), "spoa")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/consensus.py", line <LINE>, in run_spoa
+    subprocess.check_call([ spoa_path, reads, "-l", "0", "-r", "0", "-g", "-2"], stdout=output_file, stderr=null)
+  File "<PATH>/subprocess.py", line <LINE>, in check_call
+    raise CalledProcessError(retcode, cmd)
+subprocess.CalledProcessError: Command '['spoa', '<TMPDIR> '-l', '0', '-r', '0', '-g', '-2']' died with <Signals.SIGABRT: 6>.

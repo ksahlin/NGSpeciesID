@@ -1,0 +1,12 @@
+Using already existing sorted file in specified directory, in not intended, specify different outfolder or delete the current file.
+Starting Clustering: 274 reads
+Traceback (most recent call last):
+  File "<PATH>/NGSpeciesID", line <LINE>, in <module>
+    main(args)
+  File "<PATH>/NGSpeciesID", line <LINE>, in main
+    clusters, representatives = parallelize.parallel_clustering(read_array, p_emp_probs, args)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/parallelize.py", line <LINE>, in parallel_clustering
+    read_array =  [ (i, b_index, acc, seq, qual, score) for i, (i, b_index, acc, seq, qual, score, error_rate, _) in sorted(all_representatives.items(), key=lambda x: x[1][5], reverse=True)]
+                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: not enough values to unpack (expected 8, got 6)

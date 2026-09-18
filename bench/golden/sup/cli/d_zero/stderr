@@ -1,0 +1,14 @@
+Starting Clustering: 3000 reads
+Traceback (most recent call last):
+  File "<PATH>/NGSpeciesID", line <LINE>, in <module>
+    main(args)
+  File "<PATH>/NGSpeciesID", line <LINE>, in main
+    clusters, representatives = single_clustering(read_array, p_emp_probs, args)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/NGSpeciesID", line <LINE>, in single_clustering
+    result_dict = cluster.reads_to_clusters(clusters, representatives, read_array, p_emp_probs, minimizer_database, new_batch_index, args)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/cluster.py", line <LINE>, in reads_to_clusters
+    if i % args.print_output == 0: 
+       ~~^~~~~~~~~~~~~~~~~~~
+ZeroDivisionError: integer modulo by zero

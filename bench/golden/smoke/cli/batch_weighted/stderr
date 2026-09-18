@@ -1,0 +1,11 @@
+Starting Clustering: 274 reads
+Traceback (most recent call last):
+  File "<PATH>/NGSpeciesID", line <LINE>, in <module>
+    main(args)
+  File "<PATH>/NGSpeciesID", line <LINE>, in main
+    clusters, representatives = parallelize.parallel_clustering(read_array, p_emp_probs, args)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<PATH>/parallelize.py", line <LINE>, in parallel_clustering
+    lowest_batch_index = min( [ prev_batch_index for (read_cl_id, prev_batch_index, acc, seq, qual, score) in batch ] )
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: min() iterable argument is empty

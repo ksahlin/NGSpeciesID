@@ -1,0 +1,294 @@
+# CI for the Rust port.
+#
+# The central claim of this port is that installation stops failing
+# (PORTING.md, Goal). Until this file existed, that claim had been measured on
+# exactly ONE machine -- one OS, one architecture -- and the port links two
+# native libraries, spoa (C++) and parasail (C, through cmake and bindgen),
+# which are precisely the things that break somewhere else. So the matrix is
+# four real targets rather than one, and it is not decoration.
+name: CI
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build, test and lint on every platform a user might install on.
+  # ---------------------------------------------------------------------------
+  rust:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    # An unschedulable runner label queues forever rather than failing, and a
+    # run with one job still queued never completes -- so `gh run list` shows
+    # "in progress" indefinitely and the other three results are never
+    # summarised. A timeout converts that silence into a red tick.
+    timeout-minutes: 30
+    strategy:
+      # Every target reports. A failure on one is information about that
+      # target, not a reason to cancel the other three -- "it fails on arm64
+      # Linux only" is exactly the finding this matrix exists to produce.
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    label: "Linux x86_64" }
+          - { os: ubuntu-24.04-arm, label: "Linux arm64" }
+          # macos-15-intel, NOT macos-13: the macos-13 image was retired, and an
+          # unschedulable label does not fail -- it QUEUES FOREVER. Four runs
+          # sat in `queued` because of it, with every other job finished, and
+          # nothing said why. See timeout-minutes below.
+          - { os: macos-15-intel,   label: "macOS x86_64" }
+          - { os: macos-latest,     label: "macOS arm64" }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # parasail-ffi is the DEFAULT feature, and libparasail-sys needs cmake,
+      # libclang (bindgen) and pkg-config, plus git at build time because its
+      # build.rs fetches parasail. macOS runners ship all of it with the Xcode
+      # command line tools; Debian needs saying.
+      #
+      # This step IS the documentation for the README section that does not
+      # exist yet: these four packages are what a user needs to `cargo install`.
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends cmake libclang-dev pkg-config
+
+      - name: Show build dependency versions
+        run: |
+          cmake --version | head -1
+          # The goldens are a manifest of sha256s, so the harness needs one of
+          # these. `shasum` is perl and not guaranteed on a minimal image;
+          # `sha256sum` is coreutils and absent on macOS. equivalence.sh picks
+          # whichever exists -- this just makes the choice visible in the log.
+          echo "sha256 via: $( (command -v shasum || command -v sha256sum) || echo NONE )"
+          echo "clang: $( (clang --version 2>/dev/null || echo absent) | head -1)"
+          echo "cc:    $( (cc --version 2>/dev/null || echo absent) | head -1)"
+
+      # Pinned to the repository's declared rust-version, NOT to `stable`.
+      #
+      # This is what makes the MSRV mean something. The first run of this
+      # workflow failed on three of four targets because Cargo.toml claimed 1.85
+      # while spoa's `cxx` dependency requires 1.88 -- a floor that had been
+      # false for several commits, invisible because every local build used a
+      # newer toolchain. Pinning to `stable` here would have hidden it exactly
+      # as effectively.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      # --- the default build: parasail linked as C ---
+      - name: Build (default features)
+        working-directory: rust
+        run: cargo build --release --locked
+
+      - name: Test (default features)
+        working-directory: rust
+        run: cargo test --locked
+
+      # --- the fallback build: no cmake, no libclang, no network at build time ---
+      #
+      # This configuration is what a user gets from `--no-default-features`, and
+      # it is the answer when the toolchain above is unavailable. It is exact by
+      # the same argument as the C -- 18 633 alignments identical in the
+      # isONclust port -- and it must keep working, so it is built and tested
+      # rather than merely documented.
+      - name: Build and test (no default features -- pure Rust parasail)
+        working-directory: rust
+        run: |
+          cargo build --release --locked --no-default-features
+          cargo test --locked --no-default-features
+
+      - name: Clippy (both configurations)
+        working-directory: rust
+        run: |
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets --no-default-features -- -D warnings
+
+      - name: Formatting
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: rust
+        run: cargo fmt --check
+
+      # --- the point of the whole exercise ---
+      #
+      # Byte identity against goldens recorded from the Python reference. This
+      # needs NO conda, NO python and NO external tools: `verify` compares the
+      # port's output to committed sha256s, and reports the cases it cannot
+      # reach here rather than failing them. 38 of the 55 cases are checkable
+      # this way, covering sorting, clustering, --t > 1 and subsampling.
+      #
+      # The remaining 17 need spoa/racon/medaka or a reference-built input; they
+      # are covered by the `equivalence` job below, and by a full local run.
+      - name: Byte identity against the reference goldens (smoke corpus)
+        run: |
+          CORPUS=smoke GOLDEN="$PWD/bench/golden/smoke" \
+            PORT_BIN="$PWD/rust/target/release/NGSpeciesID" \
+            bash bench/equivalence.sh verify | tee /tmp/verify.log
+          # Assert the COUNT, not just "0 failed". A run that verifies nothing
+          # prints "0 passed, 0 failed" and would otherwise be a green tick for
+          # a harness that did not run -- the worst possible CI outcome, because
+          # it is indistinguishable from success. 38 is what a machine with no
+          # reference environment and no external tools can reach; the rest are
+          # reported as "cannot verify here".
+          passed=$(sed -nE 's/^==> ([0-9]+) passed, ([0-9]+) failed/\1/p' /tmp/verify.log | tail -1)
+          failed=$(sed -nE 's/^==> ([0-9]+) passed, ([0-9]+) failed/\2/p' /tmp/verify.log | tail -1)
+          echo "verified $passed cases, $failed failed"
+          test "${failed:-1}" -eq 0
+          test "${passed:-0}" -ge 38
+
+      # A port that produces the right bytes from the wrong binary name is not
+      # installable: macOS is case-insensitive by default, so a misspelling
+      # resolves locally and fails the first time it meets ext4.
+      - name: The binary is named NGSpeciesID, exactly
+        run: |
+          test -x rust/target/release/NGSpeciesID
+          rust/target/release/NGSpeciesID --version
+
+  # ---------------------------------------------------------------------------
+  # The three hardcoded version strings must agree.
+  # ---------------------------------------------------------------------------
+  #
+  # `--version` output is a RECORDED GOLDEN, so a bump in one place and not the
+  # others breaks byte identity immediately -- and a bump in setup.py without
+  # NGSpeciesID:197 would ship a release whose --version lies about itself.
+  # Three literals, no single source of truth, and nothing checked they matched.
+  version:
+    name: Version strings agree
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare all four version literals
+        run: |
+          setup=$(sed -nE "s/^[[:space:]]*version='([^']+)'.*/\1/p" setup.py | head -1)
+          argp=$(sed -nE "s/.*version='%\(prog\)s ([^']+)'.*/\1/p" NGSpeciesID | head -1)
+          port=$(tr -d '\n' < rust/src/text/version.txt | sed -E 's/^NGSpeciesID //')
+          # A fourth literal, found during the 0.4.0 bump: text.rs asserts the
+          # contents of version.txt, so it is a second copy of the same string.
+          asrt=$(sed -nE 's/.*assert_eq!\(VERSION, "NGSpeciesID ([^\\]+)\\n"\);.*/\1/p' rust/src/text.rs)
+          # The golden itself. It is the actual contract -- `--version` output is
+          # recorded -- so a bump that forgets to re-record it fails here rather
+          # than in the CLI matrix, where it reads as a port bug.
+          gold=$(tr -d '\n' < bench/golden/smoke/cli/version/stdout | sed -E 's/^NGSpeciesID //')
+          printf 'setup.py:        %s\nargparse:        %s\nversion.txt:     %s\ntext.rs assert:  %s\ngolden stdout:   %s\n' \
+                 "$setup" "$argp" "$port" "$asrt" "$gold"
+          for v in "$setup" "$argp" "$port" "$asrt" "$gold"; do test -n "$v"; done
+          if [[ "$setup" != "$argp" || "$setup" != "$port" || "$setup" != "$asrt" || "$setup" != "$gold" ]]; then
+            echo "::error::version strings disagree -- see PORTING.md, *Versioning*"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # The full matrix, against the real Python reference.
+  # ---------------------------------------------------------------------------
+  #
+  # Linux x86_64 only, because this builds a conda environment and is minutes
+  # rather than seconds. It covers what the `rust` job cannot: the --consensus
+  # cases (spoa, racon, minimap2, medaka), the write_fastq cases whose INPUT the
+  # reference has to produce, and the CLI matrix.
+  #
+  # It RECORDS the goldens on the runner and then verifies against them, rather
+  # than comparing to the committed ones. That is deliberate and it is a
+  # correction: comparing Linux output to macOS-recorded goldens asks "is Linux
+  # output identical to macOS output", which is a question about racon, not
+  # about this port.
+  #
+  # Measured on the first run that got this far: with IDENTICAL tool versions
+  # (spoa 4.1.5, racon 1.5.0, minimap2 2.31-r1302, medaka 2.2.2, python
+  # 3.12.14), 41 cases matched and 14 did not -- every --consensus case. The
+  # differing files were all under racon_cl_id_*/, the spoa drafts
+  # (consensus_reference_*.fasta) matched everywhere, and read_alignments_it_0
+  # matched while racon_polished_it_0 did not. So racon produces different
+  # output on linux-64 than on osx-arm64 from the same input, and everything
+  # after it inherits that. See PORTING.md, Finding 28.
+  #
+  # Recording on the runner removes the confound and asks the real question:
+  # does the port match the reference ON THIS MACHINE.
+  equivalence:
+    name: Full equivalence vs the Python reference (Linux)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends cmake libclang-dev pkg-config
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Build the port
+        working-directory: rust
+        run: cargo build --release --locked
+
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          activate-environment: ""
+
+      - name: Build the reference environment
+        run: bash bench/setup_reference_env.sh 3.12 ngspeciesid-ref
+
+      - name: Record the tool versions this run resolved
+        run: |
+          eval "$(conda shell.bash hook)"; conda activate ngspeciesid-ref
+          python --version
+          for t in spoa racon minimap2 medaka samtools; do
+            printf '%-10s %s\n' "$t" "$( ("$t" --version 2>&1 || true) | head -1)"
+          done
+
+      # The CPython oracles -- phred, pyfloat, pyround -- SKIP when no reference
+      # interpreter is present, so that `cargo test` works on a clean clone.
+      # A skip that is never revoked is an oracle that never runs, so this job,
+      # which is the one place that HAS an interpreter, demands they run:
+      # NGSPECIESID_REQUIRE_PYTHON_ORACLE turns a skip back into a failure.
+      - name: The CPython oracles must actually run somewhere
+        run: |
+          eval "$(conda shell.bash hook)"; conda activate ngspeciesid-ref
+          cd rust
+          REF_PYTHON="$CONDA_PREFIX/bin/python" NGSPECIESID_REQUIRE_PYTHON_ORACLE=1 \
+            cargo test --locked --test phred_oracle --test pyfloat_oracle --test pyround_oracle
+
+      # Record on this runner, verify against that. GOLDEN points at a scratch
+      # directory, NOT at bench/golden -- the committed goldens stay untouched
+      # and this job never proposes changes to them.
+      - name: Record goldens on this runner, then verify the port against them
+        run: |
+          eval "$(conda shell.bash hook)"; conda activate ngspeciesid-ref
+          export REF_PYTHON="$CONDA_PREFIX/bin/python"
+          export GOLDEN="$RUNNER_TEMP/golden-linux"
+          mkdir -p "$GOLDEN"
+          CORPUS=smoke bash bench/equivalence.sh record
+          CORPUS=smoke bash bench/equivalence.sh verify
+          CORPUS=smoke bash bench/equivalence.sh cli record
+          CORPUS=smoke bash bench/equivalence.sh cli verify
+
+      # Separately, and NOT as a pass/fail: how far the committed goldens --
+      # recorded on macOS arm64 -- travel to this platform. A drop here is a
+      # statement about the external tools, not about the port, and it is worth
+      # seeing in the log rather than discovering during a release.
+      - name: How far the committed macOS goldens travel (informational)
+        continue-on-error: true
+        run: |
+          eval "$(conda shell.bash hook)"; conda activate ngspeciesid-ref
+          export REF_PYTHON="$CONDA_PREFIX/bin/python"
+          CORPUS=smoke GOLDEN="$PWD/bench/golden/smoke" bash bench/equivalence.sh verify \
+            | tail -1 || true

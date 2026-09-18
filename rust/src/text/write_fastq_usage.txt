@@ -1,0 +1,2 @@
+usage: NGSpeciesID write_fastq [-h] [--clusters CLUSTERS] [--fastq FASTQ]
+                               [--outfolder OUTFOLDER] [--N N]
