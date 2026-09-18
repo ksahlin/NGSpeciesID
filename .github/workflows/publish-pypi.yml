@@ -1,0 +1,81 @@
+# Publish the Python implementation to PyPI when a version tag is pushed.
+#
+# Uses PyPI's TRUSTED PUBLISHING (OIDC): PyPI is configured to trust this
+# repository and this workflow, and the upload is authenticated by a short-lived
+# token GitHub mints for the job. There is no API token to create, store as a
+# secret, rotate, or leak. It is a one-time setup on PyPI -- see
+# docs/packaging/README.md.
+#
+# Manual dispatch exists so a tag that was pushed before this workflow existed
+# (v0.4.0 was) can still be published without moving the tag.
+name: Publish to PyPI
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish"
+        required: true
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --quiet build twine
+          python -m build
+          ls -l dist/
+
+      # `twine check` validates the long_description renders. It is here rather
+      # than left to PyPI because a bad render is only visible after publishing,
+      # and a version cannot be re-uploaded.
+      - name: Check metadata
+        run: |
+          python -m pip install --quiet twine
+          python -m twine check dist/*
+
+      # The package must actually run, not merely build. setup.py ships
+      # `scripts=['NGSpeciesID']`, so the entry point is a file that has to land
+      # in bin/ and start.
+      - name: Install the built wheel and run it
+        run: |
+          python -m pip install --quiet --no-deps --target /tmp/wheeltest dist/*.whl
+          PYTHONPATH=/tmp/wheeltest python /tmp/wheeltest/bin/NGSpeciesID --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The environment is what PyPI's trusted publisher is bound to, and it is
+    # also where a required reviewer can be configured if you ever want a human
+    # approval between the tag and the upload.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/NGSpeciesID
+    permissions:
+      id-token: write      # mint the OIDC token; this is what replaces the API token
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

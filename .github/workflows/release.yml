@@ -31,8 +31,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,    label: "linux-x86_64" }
-          - { os: ubuntu-24.04-arm, label: "linux-aarch64" }
+          # Linux targets carry a `.2.17` glibc suffix and are built with
+          # cargo-zigbuild. See "Why zigbuild" below.
+          - { os: ubuntu-latest,    label: "linux-x86_64",  target: "x86_64-unknown-linux-gnu.2.17",  out: "x86_64-unknown-linux-gnu" }
+          - { os: ubuntu-24.04-arm, label: "linux-aarch64", target: "aarch64-unknown-linux-gnu.2.17", out: "aarch64-unknown-linux-gnu" }
           - { os: macos-15-intel,   label: "macos-x86_64" }
           - { os: macos-latest,     label: "macos-aarch64" }
 
@@ -51,9 +53,45 @@ jobs:
         with:
           toolchain: "1.88"
 
+      # WHY ZIGBUILD, on Linux only.
+      #
+      # The first 0.4.0 binaries were built with plain cargo on ubuntu-latest
+      # and required GLIBC_2.39 and GLIBCXX_3.4.29 -- that is Ubuntu 24.04, and
+      # nothing older. Measured against what this tool's users actually run:
+      #
+      #   CentOS 7      glibc 2.17   fails
+      #   RHEL/Rocky 8  glibc 2.28   fails
+      #   Ubuntu 20.04  glibc 2.31   fails
+      #   Ubuntu 22.04  glibc 2.35   fails
+      #   Debian 12     glibc 2.36   fails
+      #
+      # A download that does not run on an institutional HPC cluster is not a
+      # solution to "installation is hard". zig links against an old glibc ABI
+      # and statically links its own libc++, so the result needs GLIBC_2.17 and
+      # NO libstdc++ at all -- CentOS 7 and everything since.
+      #
+      # It handles spoa's C++ and libparasail-sys's cmake build, which is why it
+      # is used rather than a musl target.
+      #
+      # macOS needs none of this: those binaries already link only libc++ and
+      # libSystem from the OS.
+      - name: Install zig and cargo-zigbuild (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m pip install --user --quiet ziglang
+          echo "$(python3 -c 'import ziglang,os;print(os.path.dirname(ziglang.__file__))')" >> "$GITHUB_PATH"
+          cargo install cargo-zigbuild --locked
+
       - name: Build
         working-directory: rust
-        run: cargo build --release --locked
+        run: |
+          if [[ -n "${{ matrix.target }}" ]]; then
+            cargo zigbuild --release --locked --target "${{ matrix.target }}"
+            echo "BIN=rust/target/${{ matrix.out }}/release/NGSpeciesID" >> "$GITHUB_ENV"
+          else
+            cargo build --release --locked
+            echo "BIN=rust/target/release/NGSpeciesID" >> "$GITHUB_ENV"
+          fi
 
       # The same gate ci.yml uses. A binary that has not been checked against
       # the reference goldens is not one to hand to a user, and this costs
@@ -61,7 +99,7 @@ jobs:
       - name: Byte identity against the reference goldens
         run: |
           CORPUS=smoke GOLDEN="$PWD/bench/golden/smoke" \
-            PORT_BIN="$PWD/rust/target/release/NGSpeciesID" \
+            PORT_BIN="$PWD/$BIN" \
             bash bench/equivalence.sh verify | tee /tmp/verify.log
           passed=$(sed -nE 's/^==> ([0-9]+) passed, ([0-9]+) failed/\1/p' /tmp/verify.log | tail -1)
           failed=$(sed -nE 's/^==> ([0-9]+) passed, ([0-9]+) failed/\2/p' /tmp/verify.log | tail -1)
@@ -74,7 +112,7 @@ jobs:
           tag="${{ github.event.inputs.tag || github.ref_name }}"
           name="NGSpeciesID-${tag}-${{ matrix.label }}"
           mkdir -p "dist/$name"
-          cp rust/target/release/NGSpeciesID "dist/$name/"
+          cp "$BIN" "dist/$name/"
           cp LICENSE.txt "dist/$name/" 2>/dev/null || cp LICENSE "dist/$name/" 2>/dev/null || true
           cp CHANGELOG.md "dist/$name/" 2>/dev/null || true
           strip "dist/$name/NGSpeciesID" 2>/dev/null || true
@@ -87,13 +125,20 @@ jobs:
 
       - name: Record what this binary links against
         run: |
-          bin=rust/target/release/NGSpeciesID
+          bin="$BIN"
           "$bin" --version
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             ldd "$bin" || true
-            # glibc is dynamically linked, so the binary needs a glibc at least
-            # as new as the runner's. Printed so the release notes can say which.
-            ldd --version | head -1
+            # The number that decides whether this runs on an HPC cluster.
+            # Asserted, not just printed: a regression here silently ships a
+            # binary that a large part of the audience cannot execute.
+            need=$(strings "$bin" | grep -oE "GLIBC_2\.[0-9]+" | sort -V -u | tail -1)
+            echo "highest glibc symbol required: $need"
+            test "$need" = "GLIBC_2.17"
+            if strings "$bin" | grep -q GLIBCXX_; then
+              echo "::error::binary depends on libstdc++; zig should have linked libc++ statically"
+              exit 1
+            fi
           else
             otool -L "$bin" || true
           fi

@@ -22,6 +22,10 @@ setup(
     version='0.4.0',  # Required
     description='Reconstructs viral consensus sequences from a set of ONT reads.',  # Required
     long_description=long_description,  # Optional
+    # WITHOUT THIS, PyPI renders README.md as reStructuredText and the project
+    # page comes out mangled -- the description is markdown and has been since
+    # the file was written. Unset until 0.4.0.
+    long_description_content_type='text/markdown',
     url='https://github.com/ksahlin/NGSpeciesID',  # Optional
     author='Kristoffer Sahlin',  # Optional
     author_email='ksahlin@math.su.se',  # Optional
@@ -41,8 +45,10 @@ setup(
         #'Intended Audience :: Developers',
         #'Topic :: Software Development :: Build Tools',
 
-        # Pick your license as you wish
-        #'License :: OSI Approved :: MIT License',
+        # GPL-3.0-or-later, matching LICENSE.txt and the bioconda recipe. The
+        # sample-project placeholder that used to sit here named the wrong
+        # licence entirely.
+        'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
 
         # Specify the Python versions you support here.
         'Programming Language :: Python :: 3',
