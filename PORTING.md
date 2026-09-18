@@ -1742,6 +1742,44 @@ measurement. Ordered by how much they matter.
 | *Finding 23* | open `sorted.fastq` only on the branch that writes it | stops a failed run poisoning its output folder so the retry exits 0 on zero reads. One line, and the most user-visible of the small ones |
 | *Finding 2* | `math.fsum` at the four `sum(...for...in set(...))` sites | makes Python ≤3.11 agree with ≥3.12. **Not applied**: the decision was to pin the interpreter instead. Written up so the option stays visible |
 
+### What CI checks, and what it deliberately does not
+
+`.github/workflows/ci.yml`, three jobs:
+
+| job | targets | what it proves |
+| --- | --- | --- |
+| `rust` | Linux × {x86_64, arm64}, macOS × {x86_64, arm64} | builds, tests, clippy and fmt in **both** feature configurations, plus byte identity against the committed goldens. **This is the gate.** |
+| `version` | one | the three hardcoded version strings agree |
+| `equivalence` | Linux x86_64 | the full matrix against a real conda-built reference, including `--consensus` and the CLI cases. **`continue-on-error`** |
+
+Three decisions in there are worth defending.
+
+**The byte-identity step needs no conda, no Python and no external tools.** `verify` compares the
+port's output to committed sha256s; cases needing `spoa`/`racon`/`medaka`, or an input only the
+reference can build, report *"cannot verify here"* rather than failing. 38 of 55 cases are reachable
+that way, covering sorting, clustering, `--t > 1` and subsampling — so every platform gets a real
+byte-identity check in seconds, not a build-only smoke test.
+
+That behaviour needed a fix to be true. A case whose *input* could not be built returned
+`SKIP:clustering`, which fell through to the exit-code comparison and printed
+`wf_N0 (exit SKIP:clustering, want 1)` — three red lines, with a cause that reads like the port
+returning a garbage exit code, on any machine without a reference environment. It is a skip now.
+
+**The gate asserts the case count, not just "0 failed".** A run that verifies nothing prints
+`0 passed, 0 failed`, which is a green tick for a harness that did not run — indistinguishable from
+success and strictly worse than red. CI requires `failed == 0` **and** `passed >= 38`.
+
+**`equivalence` is evidence, not a gate, and that is temporary.** The goldens were recorded against
+one set of external-tool versions; conda on `linux-64` may resolve others, and a `spoa` bump changes
+every `consensus_reference_*.fasta`. Making it a gate before those versions are pinned would produce
+a red tick that means "conda moved", which is how a team learns to ignore CI. Pinning them is the
+work that promotes this job.
+
+Also fixed on the way: the harness hashed with `shasum` in nine places. That is a perl script, not
+guaranteed on a minimal Debian image, while `sha256sum` is coreutils and absent on macOS. A harness
+whose entire contract is a manifest of hashes, and whose purpose is to be run somewhere else, should
+not assume either — it now picks whichever exists.
+
 ### Verification gaps, now that every stage is ported
 
 These are the port's own measurement debts, not the reference's bugs. They are listed here because
@@ -1760,8 +1798,10 @@ limits.
 - Replace both README conda recipes with the one that works (*Finding 3*).
 - Say Python ≥3.12, not 3.11 (*Finding 2*).
 - Unpin `parasail==1.2.4` in `setup.py` and `requirements.txt` (*Finding 3*).
-- Retire `.travis.yml`. It runs Python 3.6 on Travis with `medaka=0.11.5`; none of those three things
-  is obtainable. Replace with CI on Linux and macOS, x86_64 and arm64.
+- ~~Replace `.travis.yml` with CI on Linux and macOS, x86_64 and arm64.~~ **Done**:
+  `.github/workflows/ci.yml` builds, tests, lints and byte-identity-checks on all four targets, in
+  both feature configurations. `.travis.yml` itself still needs deleting — it runs Python 3.6 with
+  `medaka=0.11.5`, and none of those three things is obtainable.
 - **Write the Rust build section of the README**, and state its build dependencies: cmake, libclang
   and pkg-config, needed since `parasail-ffi` became the default (*Performance*). A user who hits a
   cmake error with no documentation saying cmake is required is in exactly the position this port

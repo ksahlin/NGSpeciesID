@@ -79,6 +79,23 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 cd "$ROOT"
 
+# sha256 of a file, on both macOS and Linux.
+#
+# `shasum` is a perl script and is NOT guaranteed on a minimal Debian image;
+# `sha256sum` is coreutils and is not on macOS. This script had nine hardcoded
+# `shasum` calls, which is a portability bug in a harness whose whole job is to
+# be run somewhere else -- the goldens are a manifest of hashes, so on a machine
+# with neither the failure is every case at once, with a "command not found"
+# buried in a substitution.
+if command -v shasum >/dev/null 2>&1; then
+  sha256() { shasum -a 256 "$@" | cut -d' ' -f1; }
+elif command -v sha256sum >/dev/null 2>&1; then
+  sha256() { sha256sum "$@" | cut -d' ' -f1; }
+else
+  echo "error: neither shasum nor sha256sum found; cannot hash anything" >&2
+  exit 1
+fi
+
 REF_PYTHON="${REF_PYTHON:-$HOME/miniforge3/envs/ngspeciesid-ref/bin/python}"
 PORT_BIN="${PORT_BIN:-$ROOT/rust/target/release/NGSpeciesID}"
 # CORPUS accepts a path, or a name from bench/corpora.tsv.
@@ -274,7 +291,7 @@ cmd_seeds() {
       for s in "${seeds[@]}"; do
         d="$WORK/seeds_${s}_$tag"
         [[ -f "$d/$f" ]] || continue
-        local h; h="$(shasum -a 256 "$d/$f" | cut -d' ' -f1)"
+        local h; h="$(sha256 "$d/$f")"
         [[ -z "$first" ]] && first="$h" && continue
         [[ "$h" == "$first" ]] || differs=1
       done
@@ -337,7 +354,7 @@ cmd_seeds_sample_size() {
       bad "--sample_size $ss produced no output at all -- cannot assess"
       return 0
     fi
-    hashes+=("$(shasum -a 256 "$d/final_clusters.tsv" | cut -d' ' -f1)")
+    hashes+=("$(sha256 "$d/final_clusters.tsv")")
   done
   local distinct; distinct="$(printf '%s\n' "${hashes[@]}" | LC_ALL=C sort -u | wc -l | tr -d ' ')"
   if [[ "$distinct" == "1" ]]; then
@@ -356,7 +373,7 @@ cmd_seeds_sample_size() {
   rm -rf "$other"; mkdir -p "$other"
   PYTHONHASHSEED=0 "$REF_PYTHON" NGSpeciesID --ont --t 1 --sample_size "$ss" --seed 7 \
     --fastq "$CORPUS" --outfolder "$other" >/dev/null 2>&1 || true
-  h="$(shasum -a 256 "$other/final_clusters.tsv" 2>/dev/null | cut -d' ' -f1)"
+  h="$(sha256 "$other/final_clusters.tsv" 2>/dev/null)"
   if [[ -z "$h" ]]; then
     bad "--seed 7 produced no output"
   elif [[ "$h" == "${hashes[0]}" ]]; then
@@ -375,7 +392,7 @@ cmd_seeds_sample_size() {
     rm -rf "$d"; mkdir -p "$d"
     PYTHONHASHSEED=0 "$REF_PYTHON" NGSpeciesID --ont --t 1 --sample_size "$ss" --top_reads \
       --seed "$i" --fastq "$CORPUS" --outfolder "$d" >/dev/null 2>&1 || true
-    h="$(shasum -a 256 "$d/final_clusters.tsv" 2>/dev/null | cut -d' ' -f1)"
+    h="$(sha256 "$d/final_clusters.tsv" 2>/dev/null)"
     [[ -z "$h" ]] && { bad "--top_reads produced no output"; return 0; }
     [[ -z "$first" ]] && first="$h" && continue
     [[ "$h" == "$first" ]] || tdiff=1
@@ -474,7 +491,7 @@ cli_list_outdir() { # cli_list_outdir <dir> -> "relpath<TAB>sha256" lines, sorte
   local dir="$1"
   [[ -d "$dir" ]] || return 0
   (cd "$dir" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | while IFS= read -r rel; do
-     printf '%s\t%s\n' "$rel" "$(shasum -a 256 "$rel" | cut -d' ' -f1)"
+     printf '%s\t%s\n' "$rel" "$(sha256 "$rel")"
    done)
 }
 
@@ -956,10 +973,10 @@ cmd_record() {
     echo "# No timestamp on purpose: it made this file differ on every re-record,"
     echo "# which leaves git permanently dirty and hides real changes in the noise."
     echo "# git records when it was committed; what matters for validity is below."
-    echo "# corpus:   $(basename "$CORPUS")  sha256 $(shasum -a 256 "$CORPUS" | cut -d' ' -f1)"
+    echo "# corpus:   $(basename "$CORPUS")  sha256 $(sha256 "$CORPUS")"
     # A golden recorded against a different primer file is a different golden,
     # and which one was used is now per-corpus rather than fixed.
-    echo "# primer:   $(basename "$PRIMER")  sha256 $(shasum -a 256 "$PRIMER" | cut -d' ' -f1)"
+    echo "# primer:   $(basename "$PRIMER")  sha256 $(sha256 "$PRIMER")"
     "$REF_PYTHON" -c "import sys,parasail,edlib; print(f'# reference: python {sys.version.split()[0]}, parasail + edlib')"
     # The external tool versions are part of golden validity, not decoration: a
     # spoa upgrade changes every consensus_reference_*.fasta, and a racon or
@@ -1001,7 +1018,7 @@ cmd_record() {
       # counted, below, via files=.
       is_contract "$rel" || continue
       printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$rc" "$rel" \
-        "$(shasum -a 256 "$d/$rel" | cut -d' ' -f1)" "$(wc -c < "$d/$rel" | tr -d ' ')" \
+        "$(sha256 "$d/$rel")" "$(wc -c < "$d/$rel" | tr -d ' ')" \
         >> "$GOLDEN/manifest.tsv"
       nf=$((nf+1))
     done < <(cd "$d" && find . -type f | sed 's|^\./||' | LC_ALL=C sort)
@@ -1088,11 +1105,25 @@ cmd_verify() {
     fi
     local want_files; want_files="$(awk -F'\t' -v n="$name" '$1==n && $3=="__meta__" {sub(/^files=/,"",$4); print $4; exit}' "$GOLDEN/manifest.tsv")"
     local rc; rc="$(run_case "$name" "$entry" "$args" "$PORT_BIN" "$d")"
+    # `run_case` returns SKIP:<what> when it could not even build the case's
+    # INPUT -- the write_fastq cases need a clustering, and it is produced by
+    # the reference so the input is the reference's, not the port's.
+    #
+    # That is a skip, not a failure, and it used to be neither: the SKIP string
+    # fell through to the exit-code comparison and reported
+    # `wf_N0 (exit SKIP:clustering, want 1)`, which reads exactly like the port
+    # returning a garbage exit code. On a machine with no reference environment
+    # -- CI, or anyone who just cloned this -- that was three red lines with a
+    # nonsense cause.
+    if [[ "$rc" == SKIP:* ]]; then
+      info "cannot verify $name here -- needs ${rc#SKIP:} to build its input (golden exists)"
+      continue
+    fi
 
     local mismatched=() missing=()
     while IFS=$'\t' read -r rel want_sha want_bytes; do
       if [[ ! -f "$d/$rel" ]]; then missing+=("$rel"); continue; fi
-      local got; got="$(shasum -a 256 "$d/$rel" | cut -d' ' -f1)"
+      local got; got="$(sha256 "$d/$rel")"
       [[ "$got" == "$want_sha" ]] || mismatched+=("$rel")
     done < <(awk -F'\t' -v n="$name" '$1==n && $3!="__meta__" {print $3"\t"$4"\t"$5}' "$GOLDEN/manifest.tsv")
 
