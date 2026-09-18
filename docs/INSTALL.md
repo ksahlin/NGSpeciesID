@@ -10,6 +10,7 @@ Contents
 
   * [Building the Rust implementation](#building-the-rust-implementation)
   * [What the Linux binaries require](#what-the-linux-binaries-require)
+  * [macOS Gatekeeper](#macos-gatekeeper)
   * [What needs external tools, and what does not](#what-needs-external-tools-and-what-does-not)
   * [Reproducibility across machines](#reproducibility-across-machines)
   * [Reproducibility of --sample_size](#reproducibility-of---sample_size)
@@ -56,6 +57,29 @@ This is measured on every release, and **asserted** in the workflow: if a build 
 glibc, or picks up a libstdc++ dependency, the release fails rather than shipping a binary much of
 the intended audience cannot execute. The first 0.4.0 binaries needed GLIBC_2.39 — Ubuntu 24.04 and
 nothing older — which is what prompted the change.
+
+## macOS Gatekeeper
+
+The macOS binaries carry only an ad-hoc signature, not an Apple Developer ID one, and are not
+notarized. A file downloaded through a browser gets the `com.apple.quarantine` attribute, and
+Gatekeeper then refuses to run unsigned code:
+
+> Apple could not verify that "NGSpeciesID" is free of malware that may harm your Mac or compromise
+> your privacy.
+
+Clear the flag on the extracted folder:
+
+```
+xattr -dr com.apple.quarantine NGSpeciesID-*
+```
+
+`curl` and `gh release download` do not set the attribute, so a binary fetched that way runs without
+this step — which is also why it is easy to miss when testing.
+
+**The real fix is signing and notarizing**, which needs a paid Apple Developer account ($99/year) and
+a `codesign --sign "Developer ID Application: ..."` plus `notarytool submit` step in the release
+workflow. Until then this note is the workaround, and it belongs in the README rather than in a
+support thread.
 
 ## What needs external tools, and what does not
 

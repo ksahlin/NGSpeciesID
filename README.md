@@ -39,6 +39,17 @@ chmod +x NGSpeciesID-*/NGSpeciesID
 
 Put it on your `PATH`. Clustering and `--consensus` need **nothing else** — `spoa` is built in.
 
+**On macOS**, a binary downloaded through a browser is quarantined and Gatekeeper will refuse to run
+it — *"Apple could not verify that NGSpeciesID is free of malware"*. The binaries are not signed with
+an Apple Developer ID. Clear the quarantine flag on the extracted folder:
+
+```
+xattr -dr com.apple.quarantine NGSpeciesID-*
+```
+
+(Or open **System Settings → Privacy & Security** and click **Open Anyway** after the first attempt.)
+Downloading with `curl` or `gh release download` instead of a browser avoids the flag entirely.
+
 Polishing needs three more programs on your `PATH`:
 
 ```
