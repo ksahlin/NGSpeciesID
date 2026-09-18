@@ -9,6 +9,7 @@ Contents
 --------
 
   * [Building the Rust implementation](#building-the-rust-implementation)
+  * [What the Linux binaries require](#what-the-linux-binaries-require)
   * [What needs external tools, and what does not](#what-needs-external-tools-and-what-does-not)
   * [Reproducibility across machines](#reproducibility-across-machines)
   * [Reproducibility of --sample_size](#reproducibility-of---sample_size)
@@ -37,6 +38,24 @@ matter.
 
 The binaries attached to each release are built by CI on Linux and macOS, x86_64 and arm64, and are
 byte-identity-checked against the Python on every commit.
+
+## What the Linux binaries require
+
+Built with [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) against an old glibc ABI,
+with libc++ linked statically:
+
+```
+highest glibc symbol required: GLIBC_2.17
+libstdc++:                     none
+```
+
+glibc 2.17 is CentOS 7 (2014), so the binaries run there and on everything newer. The macOS binaries
+link only `libc++` and `libSystem` from the OS.
+
+This is measured on every release, and **asserted** in the workflow: if a build ever needs a newer
+glibc, or picks up a libstdc++ dependency, the release fails rather than shipping a binary much of
+the intended audience cannot execute. The first 0.4.0 binaries needed GLIBC_2.39 — Ubuntu 24.04 and
+nothing older — which is what prompted the change.
 
 ## What needs external tools, and what does not
 
