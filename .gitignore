@@ -17,3 +17,4 @@ rust/target/
 bench/golden/private/
 bench/corpora.local.tsv
 bench/corpora_fetch.local.sh
+dist/
