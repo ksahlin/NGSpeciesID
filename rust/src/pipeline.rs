@@ -1025,11 +1025,18 @@ mod tests {
         // ...while --sample_size alone at 0 falls through the
         // `0 < sample_size < len` guard and keeps everything.
         let mut b = args_for(&d, Some(&input));
+        // Written as "the reference's guard, negated" rather than as the
+        // simplified comparison clippy asks for: the point is that
+        // `0 < sample_size` and `sample_size < len` are the two halves of
+        // `if 0 < args.sample_size < len(read_array)`, and inverting them by
+        // hand loses the correspondence with the line being reproduced.
         b.sample_size = 0;
-        assert!(!(b.sample_size > 0), "0 does not trigger the subsample");
+        let triggers = b.sample_size > 0;
+        assert!(!triggers, "0 does not trigger the subsample");
         b.sample_size = 999_999;
+        let below_len = (b.sample_size as usize) < 2;
         assert!(
-            !((b.sample_size as usize) < 2),
+            !below_len,
             "a size above the read count does not trigger it either"
         );
         std::fs::remove_dir_all(&d).ok();

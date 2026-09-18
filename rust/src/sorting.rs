@@ -246,7 +246,11 @@ mod tests {
     fn phred_uses_log_base_10_not_log10() {
         // The reference computes log(x)/log(10). Assert we do the same thing,
         // bit for bit, rather than calling log10.
-        let x = 5.482811848400435e-06f64;
+        // `e-6`, not `e-06`: clippy's excessive_precision compares the literal
+        // against the shortest round-tripping form. Verified bit-identical
+        // before changing it, because a float literal in this repository is a
+        // measured value, not a typo -- both spellings are 3ed6ff1fd855984f.
+        let x = 5.482811848400435e-6f64;
         assert_eq!(phred_of(x), 10.0 * -(x.ln() / 10f64.ln()));
     }
 
