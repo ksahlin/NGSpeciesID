@@ -1066,6 +1066,39 @@ The port must reproduce the exit code. Whether it reproduces the traceback is a 
 the fix — treat `--consensus` without a polisher as "draft consensus only", which is what a user
 plainly means, and reject a polisher without `--consensus` — belongs in *Deferred improvements*.
 
+### Finding 30 — the reverse-complement merge misses RC pairs of unequal length, and no threshold fixes it
+
+`highest_aln_identity` divides matches by **alignment length**, so unequal lengths are charged as
+mismatches. On issue #38's data, at defaults:
+
+| pair | minimap2 | NGSpeciesID | merged? |
+| --- | --- | --- | --- |
+| 1170 vs 1311 bp, opposite strands, aligned 0→end | 96.1% | **0.823** | no |
+| 420 vs 545 bp, the 420 **93% contained** in the 545 | 99.0% | **0.676** | no |
+
+12 consensus sequences come out; **9 are genuinely distinct**. Three are the same loci observed at
+different lengths.
+
+Lowering `--rc_identity_threshold` does not fix it. Measured:
+
+```
+0.9 (default) -> 12      0.8 -> 12 (no change)      0.65 -> 8 (over-merges)
+```
+
+At 0.65 four sequences at 74–79% identity fuse into one 458 bp consensus — below the 9 that are real.
+The ranges overlap, so no threshold separates them.
+
+Two further notes:
+
+* 0.8 changing nothing means the computed identities do not predict behaviour: the merge also runs on
+  the **draft** consensus, before polishing, so the sequences it compares are not the ones measured on
+  the output.
+* The merge keeps the center with the **most read support**, not the longest. On this data one merge
+  would keep a 470 bp consensus and discard a 545 bp one for the same locus.
+
+Contract. The fix is a coverage- or containment-aware identity, not another knob. Deferred; it changes
+output bytes.
+
 ### Finding 29 — dorado writes TABS in fastq headers, and the TSV outputs are not parseable
 
 Found in the data attached to [issue #38](https://github.com/ksahlin/NGSpeciesID/issues/38), which is
