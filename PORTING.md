@@ -1066,6 +1066,42 @@ The port must reproduce the exit code. Whether it reproduces the traceback is a 
 the fix — treat `--consensus` without a polisher as "draft consensus only", which is what a user
 plainly means, and reject a polisher without `--consensus` — belongs in *Deferred improvements*.
 
+### Finding 29 — dorado writes TABS in fastq headers, and the TSV outputs are not parseable
+
+Found in the data attached to [issue #38](https://github.com/ksahlin/NGSpeciesID/issues/38), which is
+a real ONT run basecalled by a recent dorado. Every header carries BAM-style tags, **tab-separated**:
+
+```
+@1878cdd8-1e64-495c-bd62-58c54e0ba2ca<TAB>qs:f:20.978<TAB>st:Z:2025-08-12T22:00:24.164+00:00<TAB>RG:Z:...
+```
+
+**66 497 of 66 497 reads** in that file. The accession is written verbatim into
+`final_clusters.tsv` and `final_cluster_origins.tsv`, both of which are tab-separated, so the columns
+shift by however many tags the basecaller emitted:
+
+| column | expected | actual, on this file |
+| --- | --- | --- |
+| 1 | cluster id | cluster id |
+| 2 | accession | the UUID only |
+| 3 | sequence | `qs:f:16.8612` |
+| … | | `st:Z:…`, `RG:Z:…` |
+| 6 | | the sequence |
+
+Parsing either file by column index gives silent nonsense — a naive read of column 3 as the sequence
+yields a 12-character string. Nothing errors; the numbers are simply wrong, which is the worst
+failure mode for a file a pipeline consumes.
+
+It does not affect clustering: the accession is an opaque key throughout, and the sort stage's
+`readfq` keeps the line as-is. The damage is entirely in the output contract.
+
+This is in the same family as *Finding 6* — `write_fastq` splitting an accession on whitespace — and
+has the same root cause: **the reference treats an ONT header as a token and it is not one.**
+
+Contract. The fix has to be a deliberate divergence, because it changes output bytes: either
+percent-escape the accession, or truncate it at the first whitespace as `write_fastq` already does by
+accident. Truncating is what most consumers want and matches the read id, but it discards the tags.
+Not decided. Deferred, and blocked on nothing but the decision.
+
 ### Finding 28 — `racon` is not reproducible across architectures, so `--consensus` goldens are platform-local
 
 Measured by CI, on `linux-64`, against goldens recorded on `osx-arm64`, with **identical versions of
