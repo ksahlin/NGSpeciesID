@@ -31,7 +31,7 @@ pub fn round2(x: f64) -> f64 {
     }
     // `{:.2}` renders the exact decimal expansion of the double, rounded to two
     // places, ties to even -- the same rule Python applies.
-    format!("{:.2}", x)
+    format!("{x:.2}")
         .parse()
         .expect("a formatted float always parses")
 }

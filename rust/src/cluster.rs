@@ -424,11 +424,10 @@ pub fn assert_unique_accessions(reps: &HashMap<usize, String>) -> Result<(), Str
     for (id, acc) in reps {
         if let Some(other) = seen.insert(acc.as_str(), *id) {
             return Err(format!(
-                "duplicate accession {:?} on reads {} and {}. The candidate ranking in \
-                 get_best_cluster breaks ties with the accession, so duplicates make the \
+                "duplicate accession {acc:?} on reads {other} and {id}. The candidate ranking \
+                 in get_best_cluster breaks ties with the accession, so duplicates make the \
                  reference's result depend on CPython set-iteration order, which this port \
-                 does not model. See PORTING.md, get_all_hits.",
-                acc, other, id
+                 does not model. See PORTING.md, get_all_hits."
             ));
         }
     }

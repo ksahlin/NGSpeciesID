@@ -86,6 +86,16 @@ smallvec = "1.15"
 spoa-sys = "0.2.1"
 cxx = "1"
 
+# Lint intent, pinned so it does not depend on which clippy you happen to run.
+#
+# CI pins the toolchain to the MSRV (1.88) and a developer here was on 1.98.
+# `uninlined_format_args` sits in a different lint group in those two releases,
+# so `cargo clippy -D warnings` was clean locally and failed in CI on five
+# sites -- a whole class of "green here, red there" that costs a push-and-wait
+# cycle each time. Stating the lint makes both versions agree.
+[lints.clippy]
+uninlined_format_args = "warn"
+
 [profile.release]
 opt-level = 3
 lto = true

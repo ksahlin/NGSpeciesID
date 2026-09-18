@@ -1064,8 +1064,14 @@ cmd_record() {
 check_bin_fresh() {
   [[ "${ALLOW_STALE_BIN:-0}" == "1" ]] && return 0
   [[ -x "$PORT_BIN" ]] || return 0
+  # `rust/src` and the manifests ONLY. Not `rust/tests`: a test file cannot
+  # change the release binary, so `cargo build --release` does not rebuild for
+  # one -- which made this guard unclearable. It fired, told you to build, the
+  # build was a no-op, and it fired again. A guard whose remedy does not work is
+  # worse than no guard: the way out is to ignore it, which is the habit this
+  # exists to prevent.
   local newer
-  newer="$(find "$ROOT/rust/src" "$ROOT/rust/tests" "$ROOT/rust/Cargo.toml" "$ROOT/rust/Cargo.lock" \
+  newer="$(find "$ROOT/rust/src" "$ROOT/rust/Cargo.toml" "$ROOT/rust/Cargo.lock" \
              -newer "$PORT_BIN" -type f 2>/dev/null | head -3)"
   [[ -z "$newer" ]] && return 0
   bad "$PORT_BIN is OLDER than the sources -- it would report failures that are not real"

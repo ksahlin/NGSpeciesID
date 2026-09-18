@@ -41,7 +41,7 @@ pub fn repr(v: f64) -> String {
 
     // Rust's LowerExp gives the shortest round-tripping digits in the form
     // d[.ddd]e[-]dd, which is exactly the (digits, exponent) pair we need.
-    let sci = format!("{:e}", a);
+    let sci = format!("{a:e}");
     let (mantissa, exp_str) = sci.split_once('e').expect("LowerExp always emits 'e'");
     let exp: i32 = exp_str
         .parse()
@@ -58,7 +58,7 @@ pub fn repr(v: f64) -> String {
     };
 
     if neg {
-        format!("-{}", body)
+        format!("-{body}")
     } else {
         body
     }
@@ -180,7 +180,7 @@ mod tests {
             }
             let s = repr(v);
             let back: f64 = s.parse().expect("must parse back");
-            assert_eq!(back.to_bits(), v.to_bits(), "round trip failed for {}", s);
+            assert_eq!(back.to_bits(), v.to_bits(), "round trip failed for {s}");
         }
     }
 }
