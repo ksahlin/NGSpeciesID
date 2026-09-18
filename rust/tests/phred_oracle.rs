@@ -14,18 +14,14 @@ use std::process::Command;
 #[path = "../src/phred.rs"]
 mod phred;
 
+#[path = "common/ref_python.rs"]
+mod ref_python;
+
 #[test]
 fn frozen_tables_match_the_reference() {
-    if std::env::var("ISONCLUST_SKIP_PYTHON_ORACLE").is_ok() {
-        eprintln!("SKIPPED by ISONCLUST_SKIP_PYTHON_ORACLE -- phred tables unverified here");
+    let Some(py) = ref_python::reference_python() else {
         return;
-    }
-    let py = std::env::var("REF_PYTHON").unwrap_or_else(|_| {
-        format!(
-            "{}/miniforge3/envs/isonclust-ref/bin/python",
-            std::env::var("HOME").unwrap_or_default()
-        )
-    });
+    };
 
     let mut input = String::new();
     for (i, cap, unc) in phred::all() {
@@ -45,11 +41,7 @@ fn frozen_tables_match_the_reference() {
         .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap_or_else(|e| {
-            panic!(
-                "could not run the reference interpreter at {py}: {e}\n\
-                 Build it with bench/setup_reference_env.sh, point REF_PYTHON at it, \
-                 or set ISONCLUST_SKIP_PYTHON_ORACLE=1 to skip explicitly."
-            )
+            panic!("the reference interpreter at {py} exists but would not run: {e}")
         });
     child
         .stdin

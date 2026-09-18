@@ -6,7 +6,7 @@
 //! stated before it was measured in the two prior ports turned out wrong.
 //!
 //! Requires an interpreter. If you genuinely have none, set
-//! `ISONCLUST_SKIP_PYTHON_ORACLE=1` -- the skip is then explicit and visible in
+//! `NGSPECIESID_SKIP_PYTHON_ORACLE=1` -- the skip is then explicit and visible in
 //! the output, rather than the test quietly passing on a machine that never
 //! ran it.
 
@@ -41,18 +41,14 @@ fn values(n: usize) -> Vec<f64> {
     out
 }
 
+#[path = "common/ref_python.rs"]
+mod ref_python;
+
 #[test]
 fn repr_matches_cpython() {
-    if std::env::var("ISONCLUST_SKIP_PYTHON_ORACLE").is_ok() {
-        eprintln!("SKIPPED by ISONCLUST_SKIP_PYTHON_ORACLE -- pyfloat is unverified here");
+    let Some(py) = ref_python::reference_python() else {
         return;
-    }
-    let py = std::env::var("REF_PYTHON").unwrap_or_else(|_| {
-        format!(
-            "{}/miniforge3/envs/isonclust-ref/bin/python",
-            std::env::var("HOME").unwrap_or_default()
-        )
-    });
+    };
 
     let vals = values(40000);
 
@@ -70,11 +66,7 @@ fn repr_matches_cpython() {
         .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap_or_else(|e| {
-            panic!(
-                "could not run the reference interpreter at {py}: {e}\n\
-                 Build it with bench/setup_reference_env.sh, point REF_PYTHON at it, \
-                 or set ISONCLUST_SKIP_PYTHON_ORACLE=1 to skip explicitly."
-            )
+            panic!("the reference interpreter at {py} exists but would not run: {e}")
         });
     child
         .stdin

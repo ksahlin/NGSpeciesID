@@ -224,6 +224,18 @@ jobs:
             printf '%-10s %s\n' "$t" "$( ("$t" --version 2>&1 || true) | head -1)"
           done
 
+      # The CPython oracles -- phred, pyfloat, pyround -- SKIP when no reference
+      # interpreter is present, so that `cargo test` works on a clean clone.
+      # A skip that is never revoked is an oracle that never runs, so this job,
+      # which is the one place that HAS an interpreter, demands they run:
+      # NGSPECIESID_REQUIRE_PYTHON_ORACLE turns a skip back into a failure.
+      - name: The CPython oracles must actually run somewhere
+        run: |
+          eval "$(conda shell.bash hook)"; conda activate ngspeciesid-ref
+          cd rust
+          REF_PYTHON="$CONDA_PREFIX/bin/python" NGSPECIESID_REQUIRE_PYTHON_ORACLE=1 \
+            cargo test --locked --test phred_oracle --test pyfloat_oracle --test pyround_oracle
+
       - name: Output matrix and CLI matrix, smoke corpus
         run: |
           eval "$(conda shell.bash hook)"; conda activate ngspeciesid-ref

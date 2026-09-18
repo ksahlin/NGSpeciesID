@@ -13,18 +13,14 @@ use std::process::Command;
 #[path = "../src/pyround.rs"]
 mod pyround;
 
+#[path = "common/ref_python.rs"]
+mod ref_python;
+
 #[test]
 fn round2_matches_cpython() {
-    if std::env::var("ISONCLUST_SKIP_PYTHON_ORACLE").is_ok() {
-        eprintln!("SKIPPED by ISONCLUST_SKIP_PYTHON_ORACLE -- pyround is unverified here");
+    let Some(py) = ref_python::reference_python() else {
         return;
-    }
-    let py = std::env::var("REF_PYTHON").unwrap_or_else(|_| {
-        format!(
-            "{}/miniforge3/envs/isonclust-ref/bin/python",
-            std::env::var("HOME").unwrap_or_default()
-        )
-    });
+    };
 
     let mut vals: Vec<f64> = Vec::new();
     // every exact midpoint in range, where ties bite
@@ -55,11 +51,7 @@ fn round2_matches_cpython() {
         .stdout(std::process::Stdio::piped())
         .spawn()
         .unwrap_or_else(|e| {
-            panic!(
-                "could not run the reference interpreter at {py}: {e}\n\
-                 Build it with bench/setup_reference_env.sh, point REF_PYTHON at it, \
-                 or set ISONCLUST_SKIP_PYTHON_ORACLE=1 to skip explicitly."
-            )
+            panic!("the reference interpreter at {py} exists but would not run: {e}")
         });
     child
         .stdin
