@@ -1,6 +1,24 @@
 Changelog
 =========
 
+## 0.4.1
+
+Packaging only. No change to behaviour or output; 0.4.1 is byte-identical to 0.4.0.
+
+`setup.py` set `long_description` to the markdown README and never set
+`long_description_content_type`, so PyPI would have parsed it as reStructuredText and mangled the
+project page. The publish workflow's `twine check` caught it and refused to upload 0.4.0 — a version
+cannot be replaced on PyPI once published, so this is released as 0.4.1 rather than retagged.
+
+The licence classifier was also still pypa's sample-project MIT placeholder; the project is
+GPL-3.0-or-later.
+
+Linux binaries are now built with `cargo-zigbuild` against the glibc 2.17 ABI, with libc++ linked
+statically. The 0.4.0 binaries required GLIBC_2.39 — Ubuntu 24.04 and nothing older — so they did not
+run on CentOS 7, RHEL/Rocky 8, Ubuntu 20.04/22.04 or Debian 12. The workflow now asserts both the
+glibc floor and the absence of a libstdc++ dependency, so a regression fails the release instead of
+shipping.
+
 ## 0.4.0
 
 ### Rust implementation
