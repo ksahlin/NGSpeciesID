@@ -191,9 +191,22 @@ def polish_sequences(centers, args):
         polishing_pattern = os.path.join(args.outfolder, "medaka_cl_id_*")
     elif args.racon:
         polishing_pattern = os.path.join(args.outfolder, "racon_cl_id_*")
+    else:
+        # DRAFT-ONLY. Neither polisher was asked for, so there is nothing to
+        # clean up and nothing to run: the spoa references written below are the
+        # output, and the polishing branches further down are already guarded by
+        # the same two flags.
+        #
+        # This used to be unbound, and reading it on the next line raised
+        # `UnboundLocalError: cannot access local variable 'polishing_pattern'`
+        # AFTER clustering, spoa and reverse-complement detection had all run --
+        # every expensive step done and nothing written out. PORTING.md,
+        # Finding 4.
+        polishing_pattern = None
 
-    for folder in glob.glob(polishing_pattern):
-        shutil.rmtree(folder)
+    if polishing_pattern is not None:
+        for folder in glob.glob(polishing_pattern):
+            shutil.rmtree(folder)
 
     spoa_pattern = os.path.join(args.outfolder, "consensus_reference_*")
     for file in glob.glob(spoa_pattern):

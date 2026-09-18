@@ -417,15 +417,15 @@ cmd_seeds_sample_size() {
 # point -- lumping them together would either hide a real failure or produce
 # sixteen permanent red lines that everyone learns to ignore.
 #
-#   EXACT (29)      byte-identical stdout, stderr and exit code.
-#   TRACEBACK (16)  the reference exits through a Python traceback. Exit code
+#   EXACT (30)      byte-identical stdout, stderr and exit code.
+#   TRACEBACK (15)  the reference exits through a Python traceback. Exit code
 #                   and "says something, and it is not a stack trace" are the
 #                   contract; the text is a deliberate divergence. Two of them
 #                   ALSO pin the files left in the output folder -- see
 #                   CLI_CASE_OUTDIR.
 #   PENDING (0)     a valid invocation whose stages the port does not have yet.
 #
-# 29 + 16 + 0 = 45. If that stops adding up, a case was added without being
+# 30 + 15 + 0 = 45. If that stops adding up, a case was added without being
 # classified, and `cmd_cli` says so rather than guessing.
 
 # PENDING: the invocation is valid, so the reference goes on to run the tool.
@@ -461,7 +461,7 @@ CLI_NEEDS_STAGES=" "
 # also the one place the port is expected to be *better* than the reference: a
 # user who passes --k 9 should be told that --k 9 has no probability table, not
 # handed a KeyError on a tuple of two floats.
-CLI_TRACEBACK=" batch_bogus batch_weighted consensus_no_polisher d_zero exact_f exact_m k_too_big k_too_small kw_gap max_seqs_zero no_outfolder no_trailing_nl use_old_k_mismatch use_old_k_mismatch_t8 use_old_missing wf_spaces "
+CLI_TRACEBACK=" batch_bogus batch_weighted d_zero exact_f exact_m k_too_big k_too_small kw_gap max_seqs_zero no_outfolder no_trailing_nl use_old_k_mismatch use_old_k_mismatch_t8 use_old_missing wf_spaces "
 TRACEBACK_MAX_LINES=6
 
 # DIVERGENT BY DESIGN, in the sense isONclust's harness used the word: a golden

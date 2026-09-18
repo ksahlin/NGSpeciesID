@@ -1,13 +1,4 @@
 Starting Clustering: 3000 reads
 Finished Clustering: 30 clusters formed
 Starting Consensus creation and polishing
-Traceback (most recent call last):
-  File "<PATH>/NGSpeciesID", line <LINE>, in <module>
-    main(args)
-  File "<PATH>/NGSpeciesID", line <LINE>, in main
-    centers_polished = consensus.polish_sequences(centers_filtered, args)
-                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<PATH>/consensus.py", line <LINE>, in polish_sequences
-    for folder in glob.glob(polishing_pattern):
-                            ^^^^^^^^^^^^^^^^^
-UnboundLocalError: cannot access local variable 'polishing_pattern' where it is not associated with a value
+Finished Consensus creation: 3 created

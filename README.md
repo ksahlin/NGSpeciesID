@@ -9,9 +9,10 @@ Table of Contents
 =================
 
   * [INSTALLATION](#installation)
-    * [Using conda](#using-conda)
-    * [Building the Rust implementation](#building-the-rust-implementation-optional)
-    * [Reproducibility](#reproducibility)
+    * [Binaries](#binaries)
+    * [Conda](#conda)
+    * [Building the Rust implementation from source](#building-the-rust-implementation-from-source)
+    * [Python implementation](#python-implementation)
     * [Testing installation](#testing-installation)
   * [USAGE](#usage)
     * [Filtering and subsampling](#filtering-and-subsampling)
@@ -26,9 +27,18 @@ Table of Contents
 INSTALLATION
 ----------------
 
-### Using conda
+NGSpeciesID has been **re-implemented in Rust** (2026-09). It produces byte-identical output to the
+Python implementation and is 3-6x faster at clustering. Both are in this repository.
 
-Conda is the preferred way to install NGSpeciesID.
+### Binaries
+
+Prebuilt binaries for Linux and macOS, x86_64 and arm64, are attached to every
+[release](https://github.com/ksahlin/NGSpeciesID/releases). Download, `chmod +x`, put on your `PATH`.
+
+`--consensus --racon` and `--consensus --medaka` additionally need `racon`, `minimap2` and `medaka`
+on your `PATH`; the conda environment below provides them.
+
+### Conda
 
 ```
 conda create -n NGSpeciesID -c conda-forge -c bioconda python=3.12 pip medaka spoa racon minimap2 samtools
@@ -36,104 +46,24 @@ conda activate NGSpeciesID
 pip install --no-deps NGSpeciesID
 ```
 
-Then [test the installation](#testing-installation).
+The `--no-deps` is required, not optional — see [docs/INSTALL.md](docs/INSTALL.md).
 
-Upon start/login to your server/computer you need to activate the conda environment "NGSpeciesID" to
-run NGSpeciesID as:
-
-```
-conda activate NGSpeciesID
-```
-
-#### Why the commands look like this
-
-Three details in the two lines above are deliberate, and getting any of them wrong is what makes the
-install fail.
-
-**`--no-deps` on the pip step.** NGSpeciesID needs two python libraries, `parasail` and `edlib`.
-The conda command above already installs both — `medaka` depends on `parasail-python` and
-`python-edlib`, and bioconda has prebuilt packages of each for linux-64, osx-64 and osx-arm64.
-Without `--no-deps`, pip reads this package's `install_requires` and reinstalls `parasail` **from
-PyPI, on top of the working conda build**. PyPI publishes no `parasail` wheel for any ARM platform,
-so on Apple Silicon (and on ARM Linux) pip falls back to compiling it from source, which fails after
-about two minutes with `RuntimeError: autoreconf -fi failed`. On x86_64 a PyPI wheel exists, the
-reinstall succeeds, and you never notice — which is why this went unreported for so long.
-
-**No version pins.** Earlier versions of these instructions pinned `medaka==2.0.1` (or `==0.11.5`)
-and `openblas==0.3.3`. Those pins resolve on linux-64 and on neither macOS platform: `medaka 2.0.1`
-has no macOS build at all, and conda-forge's earliest `openblas` for osx-arm64 is 0.3.11. Leave them
-unpinned.
-
-**`python=3.12`.** `medaka` 2.2.x requires it. It is also the interpreter to prefer for reproducible
-results: on python 3.11 and earlier, `sum()` over a set of floats is order-dependent, and repeated
-runs of NGSpeciesID on the same input can differ in the last digits of the reported read error rates.
-
-If you would rather not use `medaka` at all, install the libraries directly and use `--racon`:
-
-```
-conda create -n NGSpeciesID -c conda-forge -c bioconda python=3.12 pip parasail-python python-edlib spoa racon minimap2
-conda activate NGSpeciesID
-pip install --no-deps NGSpeciesID
-```
-
-### Building the Rust implementation (optional)
-
-NGSpeciesID also ships a Rust implementation in `rust/`. It produces **byte-identical output** to the
-Python — that is its specification, checked case by case against the Python on every commit — and it
-is roughly 3-6x faster on the clustering stage. The Python is what `pip install` gives you and
-remains the reference; building the Rust one is optional.
+### Building the Rust implementation from source
 
 ```
 cargo build --release --manifest-path rust/Cargo.toml
-./rust/target/release/NGSpeciesID --help
 ```
 
-It needs **Rust 1.88 or newer**, and because it links parasail's C library through FFI, also:
+Needs Rust 1.88+, plus `cmake`, `libclang` and `pkg-config`. `--no-default-features` builds with a
+pure-Rust aligner and needs none of those.
 
-| dependency | Debian/Ubuntu | macOS |
-| --- | --- | --- |
-| cmake, libclang, pkg-config | `apt install cmake libclang-dev pkg-config` | included with the Xcode command line tools |
-| git | usually present; `libparasail-sys` fetches parasail at build time | |
+### Python implementation
 
-If you would rather not install those, build without the C library:
+The original Python implementation is still here, still supported, and is the reference the Rust port
+is checked against on every commit. `pip install NGSpeciesID` installs it.
 
-```
-cargo build --release --manifest-path rust/Cargo.toml --no-default-features
-```
-
-That uses a pure-Rust aligner instead. It needs nothing but a Rust toolchain and produces the same
-bytes; it is slower on reads much longer than ~1 kb, where the C library's vector instructions matter.
-
-**The polishers are still external.** `--consensus` shells out to `spoa`, `racon`, `minimap2` and
-`medaka` exactly as the Python does, so the conda environment above is still what provides them.
-
-**One caveat about `--racon` across machines.** Given identical input and identical versions, racon
-produces different output on x86_64 Linux than on arm64 macOS. So a polished consensus is
-reproducible on a given platform and *not* guaranteed to be identical if you move the same analysis
-to a different architecture. This is a property of racon, not of NGSpeciesID, and it was already true
-of the Python. Everything upstream of racon — clustering, the spoa draft consensus, primer trimming —
-is identical across all four platforms tested.
-
-### Reproducibility
-
-Running the same command on the same input gives the same answer, down to the polished consensus
-sequences. Two things are worth knowing about that:
-
-* **`--sample_size` is seeded.** It draws a random subset of reads, and the draw comes from `--seed`
-  (default 0), so it is reproducible. Pass a different `--seed` to draw a different subset — useful
-  for checking how sensitive a consensus is to which reads went into it. This is the only randomness
-  in the tool.
-
-  Before v0.4.0 the draw was **not** seeded, so two runs of the same `--sample_size` command gave
-  different clusters and different consensus sequences. If you are comparing against results
-  produced by an older version, they will not match.
-
-* **Use python 3.12 or newer.** On python 3.11 and earlier, `sum()` over a set of floats is
-  order-dependent, so the read error rates NGSpeciesID reports can differ in their last digits
-  between runs of the same command.
-
-`--top_reads` is a different thing and still available: it takes the `--sample_size` highest-scoring
-reads instead of a random subset, and ignores `--seed`.
+Installation details, build dependencies and cross-platform caveats: [docs/INSTALL.md](docs/INSTALL.md).
+Changes between versions: [CHANGELOG.md](CHANGELOG.md).
 
 ### Testing installation
 

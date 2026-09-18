@@ -1,2 +1,1 @@
-Starting Clustering: 274 reads
-Finished Clustering: 3 clusters formed
+--medaka polishes a consensus, so it needs --consensus. Add --consensus, or drop --medaka.

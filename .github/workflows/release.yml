@@ -1,0 +1,109 @@
+# Build and attach binaries when a version tag is pushed.
+#
+# The README tells people to download a binary, so the binaries have to exist;
+# this is what makes that sentence true. Same four targets as ci.yml, same
+# toolchain, and the same byte-identity check runs against each binary BEFORE it
+# is uploaded -- an artefact that has not been checked is not worth shipping.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and upload for"
+        required: true
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  binaries:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    label: "linux-x86_64" }
+          - { os: ubuntu-24.04-arm, label: "linux-aarch64" }
+          - { os: macos-15-intel,   label: "macos-x86_64" }
+          - { os: macos-latest,     label: "macos-aarch64" }
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends cmake libclang-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+
+      - name: Build
+        working-directory: rust
+        run: cargo build --release --locked
+
+      # The same gate ci.yml uses. A binary that has not been checked against
+      # the reference goldens is not one to hand to a user, and this costs
+      # seconds: it needs no conda, no python and no external tools.
+      - name: Byte identity against the reference goldens
+        run: |
+          CORPUS=smoke GOLDEN="$PWD/bench/golden/smoke" \
+            PORT_BIN="$PWD/rust/target/release/NGSpeciesID" \
+            bash bench/equivalence.sh verify | tee /tmp/verify.log
+          passed=$(sed -nE 's/^==> ([0-9]+) passed, ([0-9]+) failed/\1/p' /tmp/verify.log | tail -1)
+          failed=$(sed -nE 's/^==> ([0-9]+) passed, ([0-9]+) failed/\2/p' /tmp/verify.log | tail -1)
+          test "${failed:-1}" -eq 0
+          test "${passed:-0}" -ge 38
+
+      - name: Package
+        id: pack
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          name="NGSpeciesID-${tag}-${{ matrix.label }}"
+          mkdir -p "dist/$name"
+          cp rust/target/release/NGSpeciesID "dist/$name/"
+          cp LICENSE.txt "dist/$name/" 2>/dev/null || cp LICENSE "dist/$name/" 2>/dev/null || true
+          cp CHANGELOG.md "dist/$name/" 2>/dev/null || true
+          strip "dist/$name/NGSpeciesID" 2>/dev/null || true
+          ( cd dist && tar czf "$name.tar.gz" "$name" )
+          # A checksum beside each archive, because a binary downloaded from the
+          # internet should be checkable.
+          ( cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256" )
+          echo "archive=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"
+          ls -l dist
+
+      - name: Record what this binary links against
+        run: |
+          bin=rust/target/release/NGSpeciesID
+          "$bin" --version
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            ldd "$bin" || true
+            # glibc is dynamically linked, so the binary needs a glibc at least
+            # as new as the runner's. Printed so the release notes can say which.
+            ldd --version | head -1
+          else
+            otool -L "$bin" || true
+          fi
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          gh release upload "$tag" \
+            "${{ steps.pack.outputs.archive }}" \
+            "${{ steps.pack.outputs.archive }}.sha256" \
+            --clobber

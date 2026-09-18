@@ -444,7 +444,11 @@ impl Polisher {
 pub fn polish_sequences(
     centers: &mut [Center],
     outfolder: &Path,
-    polisher: Polisher,
+    // `None` is DRAFT-ONLY: --consensus with neither --medaka nor --racon.
+    // The drafts and per-center read files are still written; only the
+    // polishing step is skipped. In the reference this reached an unbound
+    // `polishing_pattern` and died after all the expensive work. Finding 4.
+    polisher: Option<Polisher>,
     args: &Args,
 ) -> Result<(), String> {
     // Clear the previous run's output, exactly as the reference's two glob
@@ -454,7 +458,7 @@ pub fn polish_sequences(
     if let Ok(entries) = std::fs::read_dir(outfolder) {
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            if name.starts_with(polisher.dir_prefix()) {
+            if polisher.is_some_and(|p| name.starts_with(p.dir_prefix())) {
                 let _ = std::fs::remove_dir_all(e.path());
             } else if name.starts_with("consensus_reference_") {
                 let _ = std::fs::remove_file(e.path());
@@ -503,6 +507,13 @@ pub fn polish_sequences(
         }
         std::fs::write(&reads_file, &body)
             .map_err(|e| format!("cannot write {}: {e}", reads_file.display()))?;
+
+        // Draft-only stops here, with consensus_reference_<id>.fasta and
+        // reads_to_consensus_<id>.fastq written and center.seq left as the spoa
+        // draft -- which is exactly what the reference now does, and what makes
+        // a standalone binary able to produce a consensus with no external
+        // tools at all: spoa is linked, racon and medaka are not.
+        let Some(polisher) = polisher else { continue };
 
         let dir = outfolder.join(format!("{}{c_id}", polisher.dir_prefix()));
         std::fs::create_dir_all(&dir)
