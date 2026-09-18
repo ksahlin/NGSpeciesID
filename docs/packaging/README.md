@@ -32,6 +32,34 @@ Four lines.
 | `host: python` | >=3.10 | **>=3.12,<3.13** | |
 | `run: python` | >=3.10 | **>=3.12,<3.13** | |
 
+### The recipe depended on the wrong package, and had since before 0.4.1
+
+`run:` listed `edlib >=1.1.2`. The code's `import edlib` comes from **`python-edlib`**, which is a
+different bioconda package:
+
+| package | linux-64 builds | provides `import edlib` |
+| --- | --- | --- |
+| `edlib` | 1.2.0–1.2.3, **no `python_abi`** | no |
+| `python-edlib` | builds for 3.10, 3.11, 3.12, 3.13 | yes |
+
+It worked anyway because **`medaka` depends on `python-edlib`**, so the module arrived transitively
+while the declared dependency resolved to a package that supplies nothing importable. Note the
+asymmetry that gives it away: `parasail-python` sits on the next line, named correctly.
+
+Tightening the python bound removed the slack that hid it — the solver started reaching for
+`edlib==1.3.9=py37...`, a Python 3.7 build, and failed:
+
+```
+Unsatisfiable dependencies for platform linux-64:
+  {MatchSpec("edlib==1.3.9=py37h2527ec5_0"), MatchSpec("python[version='>=3.7,<3.8.0a0']")}
+```
+
+Confirmed against the working reference environment, which contains `python-edlib 1.3.9.post1` and
+no `edlib` at all.
+
+This is a real fix rather than a version bump: the package now declares what it actually needs
+instead of relying on a transitive dependency of a *polisher* to supply a core import.
+
 ### The upper bound is not optional, and bioconda's CI proved it
 
 The first attempt used a bare `python >=3.12` and **failed bioconda's Linux test** while the
