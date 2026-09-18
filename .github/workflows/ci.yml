@@ -172,16 +172,23 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Compare setup.py, the argparse literal and the port's text
+      - name: Compare all four version literals
         run: |
           setup=$(sed -nE "s/^[[:space:]]*version='([^']+)'.*/\1/p" setup.py | head -1)
           argp=$(sed -nE "s/.*version='%\(prog\)s ([^']+)'.*/\1/p" NGSpeciesID | head -1)
           port=$(tr -d '\n' < rust/src/text/version.txt | sed -E 's/^NGSpeciesID //')
-          printf 'setup.py:            %s\nNGSpeciesID (argparse): %s\nrust version.txt:    %s\n' \
-                 "$setup" "$argp" "$port"
-          test -n "$setup" && test -n "$argp" && test -n "$port"
-          if [[ "$setup" != "$argp" || "$setup" != "$port" ]]; then
-            echo "::error::version strings disagree -- see PORTING.md, and re-record the cli/version golden"
+          # A fourth literal, found during the 0.4.0 bump: text.rs asserts the
+          # contents of version.txt, so it is a second copy of the same string.
+          asrt=$(sed -nE 's/.*assert_eq!\(VERSION, "NGSpeciesID ([^\\]+)\\n"\);.*/\1/p' rust/src/text.rs)
+          # The golden itself. It is the actual contract -- `--version` output is
+          # recorded -- so a bump that forgets to re-record it fails here rather
+          # than in the CLI matrix, where it reads as a port bug.
+          gold=$(tr -d '\n' < bench/golden/smoke/cli/version/stdout | sed -E 's/^NGSpeciesID //')
+          printf 'setup.py:        %s\nargparse:        %s\nversion.txt:     %s\ntext.rs assert:  %s\ngolden stdout:   %s\n' \
+                 "$setup" "$argp" "$port" "$asrt" "$gold"
+          for v in "$setup" "$argp" "$port" "$asrt" "$gold"; do test -n "$v"; done
+          if [[ "$setup" != "$argp" || "$setup" != "$port" || "$setup" != "$asrt" || "$setup" != "$gold" ]]; then
+            echo "::error::version strings disagree -- see PORTING.md, *Versioning*"
             exit 1
           fi
 

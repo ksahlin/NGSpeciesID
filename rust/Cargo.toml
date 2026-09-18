@@ -4,7 +4,7 @@ name = "ngspeciesid"
 # in src/text/version.txt, extracted verbatim from the recorded golden, and is
 # what `--version` prints. Do not "fix" --version to read CARGO_PKG_VERSION --
 # the two are allowed to drift and the golden is the contract.
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 # 1.88, and NOT the 1.85 the sibling ports use.
 #

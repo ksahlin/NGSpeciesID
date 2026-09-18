@@ -310,7 +310,7 @@ cmd_seeds() {
   cmd_seeds_sample_size
 }
 
-# --sample_size is seeded from --seed (default 0) since 0.3.2, so it belongs in
+# --sample_size is seeded from --seed (default 0) since 0.4.0, so it belongs in
 # the case matrix like any other flag. This function is what is left of the gate
 # that used to assert the OPPOSITE, and it is kept rather than deleted because
 # the property it checks is easy to lose again: seeding is three lines in one
@@ -329,7 +329,7 @@ cmd_seeds() {
 # PYTHONHASHSEED is FIXED here on purpose. Varying it would confound this with
 # Finding 2's interpreter-dependent defect, which is a different problem.
 cmd_seeds_sample_size() {
-  echo "==> --sample_size is seeded (Finding 1, fixed in 0.3.2)"
+  echo "==> --sample_size is seeded (Finding 1, fixed in 0.4.0)"
   # The sample size has to be SMALLER than the number of reads that survive
   # filtering, or the subsample never happens: the guard is
   # `0 < args.sample_size < len(read_array)`, so --sample_size 500 on the
@@ -361,7 +361,7 @@ cmd_seeds_sample_size() {
     ok "reproducible: 5 identical runs gave 1 result"
   else
     bad "--sample_size is NOT reproducible: 5 identical runs gave $distinct results"
-    info "  This was Finding 1 and it was fixed in 0.3.2 by seeding random.sample"
+    info "  This was Finding 1 and it was fixed in 0.4.0 by seeding random.sample"
     info "  from --seed. If it is back, check that the elif branch in main() still"
     info "  builds a random.Random(args.seed) rather than calling random.sample."
     return 0

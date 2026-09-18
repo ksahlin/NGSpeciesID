@@ -367,7 +367,7 @@ equivalence case, because a preset silently resolving to the wrong numbers is in
 that agrees for other reasons. Both are applied **after** explicit `--k`/`--w`, so `--ont --w 5`
 silently becomes `--w 20` — measured, and contract.
 
-`--sample_size` **is** inside the contract now, since 0.3.2 seeds it from `--seed` — see
+`--sample_size` **is** inside the contract now, since `--seed` seeds it — see
 *Finding 1* for the four cases that cover it and for what reproducing `random.sample` costs the port.
 
 ### Nothing is dropped
@@ -614,7 +614,7 @@ built — each a shell wrapper around the reference — and run against the smok
 280 short reads most cases never reach a shared-minimizer count where 5 and 6 differ. Same conclusion
 as *Finding 19*.
 
-The last row is the sharpest of the five, and it was added after 0.3.2. A port that implements
+The last row is the sharpest of the five, and it was added after `--seed`. A port that implements
 `--seed` as a parsed-and-discarded argument is reproducible, agrees with the reference on every other
 case, and is wrong. It fails `sample100_s7` and **only** `sample100_s7` — 54 of 55 pass — which is
 exactly what one well-chosen case is supposed to do, and it is why that case exists rather than
@@ -769,7 +769,7 @@ Two collisions are intended on both and must stay: `default` == `k13w20` pins th
 The recorded matrix in `bench/cases.tsv` extends that sweep to **55 cases**: `--t` at 1/2/4/8 (which
 gives 49/42/35/33 clusters), all three `--batch_type` values, every `--consensus` combination across
 both polishers, the primer and universal-tail paths, `--q 8`/`--q 9` in place of the `--q 15` that
-crashes, and — since 0.3.2 made them meaningful — four `--sample_size` cases.
+crashes, and — since `--seed` made them meaningful — four `--sample_size` cases.
 
 Those four are at sizes 100 and 200 rather than 500, because the guard is
 `0 < sample_size < len(read_array)` and a size at or above the surviving read count silently takes
@@ -878,7 +878,7 @@ passed every oracle and was caught only by diffing a dump taken from the running
 
 Ordered by how much they matter to the port.
 
-### Finding 1 — `--sample_size` was not reproducible. **Fixed in 0.3.2 with `--seed`.**
+### Finding 1 — `--sample_size` was not reproducible. **Fixed in 0.4.0 with `--seed`.**
 
 `main` subsampled with
 
@@ -896,7 +896,7 @@ worked example, the protocol manuscript it describes, and `test/consensus.sh` al
 `--sample_size`.
 
 **Resolved: `--seed`, `type=int`, default 0, feeding a local `random.Random(args.seed)`.** Option (a)
-of the four that were written up. Commit `04b252f`, and the version goes to 0.3.2 because it changes
+of the four that were written up. Commit `04b252f`, and the version goes up because it changes
 results for existing `--sample_size` users — from "a different answer every time" to "the same answer
 every time", so there is no previous answer it could have preserved.
 
@@ -1916,7 +1916,7 @@ Carried over from the isONcorrect, isONform and isONclust ports. The full versio
 measurements behind each point, are in those repositories' `PORTING.md`.
 
 1. **CLI parity first**, locked by unit tests. Argument names, defaults, validation order, message
-   text and exit codes. **39 flags** as of 0.3.2. Twenty multi-word ones need explicit
+   text and exit codes. **39 flags** as of 0.4.0. Twenty multi-word ones need explicit
    `long = "..."`; eight are double-dash single-letter; five of those carry a `dest` that differs
    from the flag; argparse prefix abbreviation is live in all three of its behaviours.
 2. **Differential oracles, not end-to-end tests.** Wrap the reference without modifying it; dump each
@@ -2058,6 +2058,38 @@ want more.
 13. **Then, and only then**, look at the deferred list. In particular *Finding 10*, which needs a
     measurement on real data before it needs a fix.
 
+## Versioning
+
+**0.4.0**, and PyPI's latest is **0.3.1**.
+
+`setup.py` said 0.3.2, set by the `--seed` commit (`04b252f`) and never released. Rather than ship
+0.3.2 and 0.4.0 back to back, 0.3.2 is folded in: no user ever saw it, so every "since 0.3.2" in
+this repository now reads 0.4.0.
+
+0.4.0 rather than 0.3.3, under 0.x semantics, because:
+
+* `--seed` is a new user-visible flag, and it **changes results** for existing `--sample_size` users
+  — the draw was unseeded before;
+* the implementation is replaced wholesale, even though the output is byte-identical;
+* the build gains dependencies (cmake, libclang, pkg-config).
+
+Not 1.0.0: that would signal API stability, and the packaging story is not settled.
+
+### The version lives in FOUR places, and nothing used to check they agreed
+
+| file | form |
+| --- | --- |
+| `setup.py` | `version='0.4.0'` |
+| `NGSpeciesID` | `version='%(prog)s 0.4.0'` — a separate literal, not read from the package |
+| `rust/src/text/version.txt` | the port's `--version`, extracted from the recorded golden |
+| `rust/src/text.rs` | an `assert_eq!` on that file's contents |
+
+`--version` output is a **recorded golden**, so a bump in one place and not the others breaks byte
+identity immediately; and a bump in `setup.py` without the argparse literal ships a release whose
+`--version` lies about itself, which is presumably how 0.3.1 and 0.3.2 came to disagree in the first
+place. CI's `version` job compares all four, and `bench/golden/*/cli/version*` had to be re-recorded
+as part of the bump.
+
 ## Commits
 
 The author asked for branches and a PR rather than a working tree left uncommitted, so unlike the
@@ -2088,9 +2120,10 @@ pushed before the rebase, so nothing was force-updated.
 It is deliberately **not** part of `fix/installation`: that branch is "the tool cannot be installed",
 which is uncontroversial and should merge quickly, and this one **changes results** for existing
 `--sample_size` users. Mixing them risks the install fix stalling behind a discussion about
-reproducibility. The version bump to 0.3.2 is in its own hunk so it can be dropped if you would
-rather bump at release time — the README sentence that names 0.3.2 as the boundary needs updating
-with it if so.
+reproducibility. The version bump was in its own hunk so it could be dropped and redone at release
+time, and **that is what happened**: it set 0.3.2, 0.3.2 was never released — PyPI's latest is still
+0.3.1 — and the release version is 0.4.0. Everything that dated `--seed` to "since 0.3.2" now says
+0.4.0, because no user ever saw the intermediate one.
 
 ### `develop`, off `master` — PR when the port is exact
 

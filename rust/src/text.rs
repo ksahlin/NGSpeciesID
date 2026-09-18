@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn version_is_the_reference_string_not_the_crate_version() {
-        assert_eq!(VERSION, "NGSpeciesID 0.3.2\n");
+        assert_eq!(VERSION, "NGSpeciesID 0.4.0\n");
     }
 
     #[test]

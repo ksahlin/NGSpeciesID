@@ -45,7 +45,7 @@ CORPUS=smoke GOLDEN=$PWD/bench/golden/smoke bench/equivalence.sh record
 
 ## `--sample_size` is seeded, and `seeds` checks three things about that
 
-Since 0.3.2 the subsample is drawn from `--seed` (default 0). `equivalence.sh seeds` used to assert
+Since 0.4.0 the subsample is drawn from `--seed` (default 0). `equivalence.sh seeds` used to assert
 the *opposite* — that the draw was unreproducible — and would have failed the moment it was fixed,
 which was the point. It now checks:
 

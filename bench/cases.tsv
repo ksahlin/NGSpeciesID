@@ -21,7 +21,7 @@
 #
 #   Nothing about --sample_size any more. It WAS excluded, because the draw came
 #     from an unseeded generator and five runs of the same command gave five
-#     different answers (PORTING.md, Finding 1). Since 0.3.2 it is seeded from
+#     different answers (PORTING.md, Finding 1). Since 0.4.0 it is seeded from
 #     --seed, so the cases below are meaningful. Note the sizes are 100 and 200
 #     rather than 500: the guard is `0 < sample_size < len(read_array)`, so a
 #     size at or above the surviving read count silently takes every read and

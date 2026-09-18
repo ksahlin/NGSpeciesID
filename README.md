@@ -10,6 +10,7 @@ Table of Contents
 
   * [INSTALLATION](#installation)
     * [Using conda](#using-conda)
+    * [Building the Rust implementation](#building-the-rust-implementation-optional)
     * [Reproducibility](#reproducibility)
     * [Testing installation](#testing-installation)
   * [USAGE](#usage)
@@ -75,6 +76,44 @@ conda activate NGSpeciesID
 pip install --no-deps NGSpeciesID
 ```
 
+### Building the Rust implementation (optional)
+
+NGSpeciesID also ships a Rust implementation in `rust/`. It produces **byte-identical output** to the
+Python — that is its specification, checked case by case against the Python on every commit — and it
+is roughly 3-6x faster on the clustering stage. The Python is what `pip install` gives you and
+remains the reference; building the Rust one is optional.
+
+```
+cargo build --release --manifest-path rust/Cargo.toml
+./rust/target/release/NGSpeciesID --help
+```
+
+It needs **Rust 1.88 or newer**, and because it links parasail's C library through FFI, also:
+
+| dependency | Debian/Ubuntu | macOS |
+| --- | --- | --- |
+| cmake, libclang, pkg-config | `apt install cmake libclang-dev pkg-config` | included with the Xcode command line tools |
+| git | usually present; `libparasail-sys` fetches parasail at build time | |
+
+If you would rather not install those, build without the C library:
+
+```
+cargo build --release --manifest-path rust/Cargo.toml --no-default-features
+```
+
+That uses a pure-Rust aligner instead. It needs nothing but a Rust toolchain and produces the same
+bytes; it is slower on reads much longer than ~1 kb, where the C library's vector instructions matter.
+
+**The polishers are still external.** `--consensus` shells out to `spoa`, `racon`, `minimap2` and
+`medaka` exactly as the Python does, so the conda environment above is still what provides them.
+
+**One caveat about `--racon` across machines.** Given identical input and identical versions, racon
+produces different output on x86_64 Linux than on arm64 macOS. So a polished consensus is
+reproducible on a given platform and *not* guaranteed to be identical if you move the same analysis
+to a different architecture. This is a property of racon, not of NGSpeciesID, and it was already true
+of the Python. Everything upstream of racon — clustering, the spoa draft consensus, primer trimming —
+is identical across all four platforms tested.
+
 ### Reproducibility
 
 Running the same command on the same input gives the same answer, down to the polished consensus
@@ -85,7 +124,7 @@ sequences. Two things are worth knowing about that:
   for checking how sensitive a consensus is to which reads went into it. This is the only randomness
   in the tool.
 
-  Before v0.3.2 the draw was **not** seeded, so two runs of the same `--sample_size` command gave
+  Before v0.4.0 the draw was **not** seeded, so two runs of the same `--sample_size` command gave
   different clusters and different consensus sequences. If you are comparing against results
   produced by an older version, they will not match.
 
