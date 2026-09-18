@@ -6,11 +6,23 @@ name = "ngspeciesid"
 # the two are allowed to drift and the golden is the contract.
 version = "0.3.2"
 edition = "2021"
-# 1.85, matching the isONcorrect, isONform and isONclust ports. The modules
-# carried across from them (parasail.rs, align.rs) need at least 1.82, and
-# pinning all four repositories to one version means a toolchain that builds
-# any of them builds all of them.
-rust-version = "1.85"
+# 1.88, and NOT the 1.85 the sibling ports use.
+#
+# The original value was 1.85, chosen so that one toolchain builds isONcorrect,
+# isONform, isONclust and this. That property died the moment this port started
+# linking spoa (ce71f22): spoa pulls in `cxx`, which requires rustc 1.88. The
+# claim then sat here for several commits being false -- every local build used
+# a much newer toolchain, so nothing noticed, and `rust-version` is only
+# enforced when the toolchain is actually old.
+#
+# CI caught it on its first run, by pinning to this declared MSRV rather than to
+# `stable`. That is the whole reason it pins: a floor nobody stands on is not a
+# floor. The modules carried across from the sibling ports (parasail.rs,
+# align.rs) still need only 1.82 -- the constraint is entirely spoa's.
+#
+# RECHECK THIS WHENEVER A DEPENDENCY IS ADDED OR BUMPED. `cargo build` on a
+# modern toolchain cannot tell you it is wrong.
+rust-version = "1.88"
 description = "Clustering and consensus of long-read amplicon data (Rust port of NGSpeciesID)"
 license = "GPL-3.0"
 

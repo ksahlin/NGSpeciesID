@@ -64,12 +64,17 @@ jobs:
           echo "clang: $( (clang --version 2>/dev/null || echo absent) | head -1)"
           echo "cc:    $( (cc --version 2>/dev/null || echo absent) | head -1)"
 
-      # Pinned to the repository's rust-version so a toolchain that builds this
-      # builds the three sibling ports too. Not `stable`: a port whose
-      # specification is byte identity should not have its floor move under it.
+      # Pinned to the repository's declared rust-version, NOT to `stable`.
+      #
+      # This is what makes the MSRV mean something. The first run of this
+      # workflow failed on three of four targets because Cargo.toml claimed 1.85
+      # while spoa's `cxx` dependency requires 1.88 -- a floor that had been
+      # false for several commits, invisible because every local build used a
+      # newer toolchain. Pinning to `stable` here would have hidden it exactly
+      # as effectively.
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.85"
+          toolchain: "1.88"
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
@@ -195,7 +200,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends cmake libclang-dev pkg-config
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.85"
+          toolchain: "1.88"
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
