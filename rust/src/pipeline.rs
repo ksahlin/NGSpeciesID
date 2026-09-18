@@ -187,7 +187,8 @@ fn consensus_stage(args: &Args, paths: &Paths, clustered: &Clustered) -> Result<
         consensus::remove_barcodes(&mut centers, b, args.trim_window, args.primer_max_ed);
     }
 
-    let polisher = consensus::Polisher::of(args).expect("cli::validate requires one");
+    // `None` means draft-only; see consensus::polish_sequences. Finding 4.
+    let polisher = consensus::Polisher::of(args);
     let mut filtered = consensus::detect_reverse_complements(centers, args.rc_identity_threshold);
     if let Err(msg) = consensus::polish_sequences(&mut filtered, outfolder, polisher, args) {
         eprintln!("Error: {msg}");

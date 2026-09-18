@@ -691,13 +691,30 @@ fn validate(mut args: Args) -> Outcome {
             1,
         );
     }
-    // 8. --consensus with neither polisher reaches an unbound
-    //    `polishing_pattern` AFTER forming and merging every consensus.
-    //    Finding 4. Failing now rather than after the expensive part is the
-    //    whole improvement.
-    if args.consensus && !args.medaka && !args.racon {
+    // 8. A polisher without --consensus. FINDING 4, and the direction of this
+    //    check is the opposite of what it was.
+    //
+    //    It used to reject `--consensus` with neither polisher, because the
+    //    reference reached an unbound `polishing_pattern` and died there --
+    //    after clustering, spoa and reverse-complement detection had all run,
+    //    writing nothing. Finding 4 is now FIXED in both implementations:
+    //    `--consensus` alone is draft-only and writes the spoa references, so
+    //    rejecting it would refuse a valid and useful run. It is also the only
+    //    consensus mode that needs no external tools, since spoa is linked.
+    //
+    //    The reverse -- `--medaka` or `--racon` with no `--consensus` -- was a
+    //    SILENT NO-OP: accepted, nothing polished, exit 0, no consensus. Saying
+    //    so beats letting someone believe they polished something.
+    if (args.medaka || args.racon) && !args.consensus {
+        let polisher = if args.medaka { "--medaka" } else { "--racon" };
+        // Byte-identical to the reference's logging.error, which prints the
+        // message and nothing else -- no "Error: " prefix. This is a SHARED
+        // message, not one of the traceback replacements, so it is contract.
         return Outcome::Stderr(
-            "Error: --consensus needs --medaka or --racon.\n".to_string(),
+            format!(
+                "{polisher} polishes a consensus, so it needs --consensus. \
+                 Add --consensus, or drop {polisher}.\n"
+            ),
             1,
         );
     }
@@ -1156,7 +1173,13 @@ mod tests {
                 "--batch_type",
                 "nosuchtype",
             ],
-            vec!["--ont", "--fastq", "x", "--outfolder", "o", "--consensus"],
+            // `--consensus` alone WAS here, as the reference's unbound
+            // `polishing_pattern`. Finding 4 is fixed in both implementations
+            // now, so that invocation is a valid draft-only run and has its own
+            // test. Nothing replaces it here: the mirror case, a polisher
+            // without --consensus, is NOT a traceback replacement -- both
+            // implementations emit the same sentence, so it is contract and
+            // does not carry this class's "Error: " prefix.
             vec![
                 "--ont",
                 "--fastq",
@@ -1246,17 +1269,34 @@ mod tests {
     }
 
     #[test]
-    fn a_polisher_without_consensus_is_accepted_and_does_nothing() {
-        // Finding 4's mirror: exit 0, no consensus, no warning. Contract.
+    fn a_polisher_without_consensus_is_refused() {
+        // Finding 4's mirror, now fixed in both implementations. It used to be
+        // accepted: exit 0, nothing polished, no consensus and no warning.
+        match p(&["--ont", "--fastq", "x", "--outfolder", "o", "--medaka"]) {
+            Outcome::Stderr(msg, code) => {
+                assert_eq!(code, 1);
+                assert!(msg.contains("--medaka"), "names the flag: {msg}");
+                assert!(msg.contains("--consensus"), "and what to add: {msg}");
+            }
+            _ => panic!("expected a polisher-without-consensus error"),
+        }
+    }
+
+    #[test]
+    fn consensus_without_a_polisher_is_accepted_as_draft_only() {
+        // The other half of Finding 4, and the direction that changed: this
+        // used to be refused because the reference crashed on it. It is now a
+        // valid run that writes the spoa drafts -- and the only consensus mode
+        // needing no external tools, since spoa is linked.
         let a = run(p(&[
             "--ont",
             "--fastq",
             "x",
             "--outfolder",
             "o",
-            "--medaka",
+            "--consensus",
         ]));
-        assert!(a.medaka && !a.consensus);
+        assert!(a.consensus && !a.medaka && !a.racon);
     }
 
     // --- defaults -----------------------------------------------------------

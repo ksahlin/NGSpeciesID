@@ -292,6 +292,15 @@ if __name__ == '__main__':
     if 100 < args.w or args.w < args.k:
         logging.error('Please specify a window of size larger or equal to k, and smaller than 100.')
         sys.exit(1)
+    # A polisher without --consensus used to be a SILENT NO-OP: the flag was
+    # accepted, nothing was polished, and the run exited 0 having produced no
+    # consensus at all. Saying so is strictly better than letting someone
+    # believe they polished something. PORTING.md, Finding 4.
+    if (args.medaka or args.racon) and not args.consensus:
+        polisher = '--medaka' if args.medaka else '--racon'
+        logging.error('{0} polishes a consensus, so it needs --consensus. '
+                      'Add --consensus, or drop {0}.'.format(polisher))
+        sys.exit(1)
 
     main(args)
 

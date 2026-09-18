@@ -1025,7 +1025,7 @@ reproducible alternative), *Finding 2* (python ≤3.11 makes the reported error 
 *Finding 20* (`--abundance_ratio` applies after subsampling). Documenting a defect is not fixing it —
 all three stay open — but it stops users being surprised by it in the meantime.
 
-### Finding 4 — `--consensus` without a polisher crashes, after doing all the work
+### Finding 4 — `--consensus` without a polisher crashed, after doing all the work. **Fixed in 0.4.0.**
 
 `polish_sequences` sets `polishing_pattern` inside `if args.medaka: ... elif args.racon: ...` and then
 reads it unconditionally. Neither flag is gated on `--consensus`, and neither is required by it. So:
@@ -1037,6 +1037,27 @@ NGSpeciesID --ont --fastq test/sample_h1.fastq --outfolder out --consensus
 runs the clustering, runs spoa on every abundant cluster, runs reverse-complement detection, and then
 dies with `UnboundLocalError: cannot access local variable 'polishing_pattern'`, exit 1. Everything
 expensive has already happened and none of it is written out.
+
+**Fixed in both implementations for 0.4.0**, and it is the fix with the most leverage in the release.
+
+* `--consensus` alone is now **draft-only**: it writes `consensus_reference_<id>.fasta` and
+  `reads_to_consensus_<id>.fastq` and exits 0. Verified byte-identical between the two
+  implementations — same file set, every file, and stderr.
+* The mirror case, `--medaka` or `--racon` **without** `--consensus`, was a silent no-op: accepted,
+  nothing polished, exit 0, no consensus. It is now an error naming the flag and what to add.
+
+Why it matters beyond tidiness: **spoa is linked into the Rust binary, not run as a subprocess**, so
+draft-only is the one consensus mode that needs no external program at all. Before this fix a
+standalone binary could cluster and nothing else; after it, a single downloaded file produces
+consensus sequences. `racon`, `minimap2` and `medaka` remain external and remain needed for polishing.
+
+One detail nearly shipped wrong: the port's message carried an `Error: ` prefix that the reference's
+`logging.error` does not print. Traceback *replacements* are a deliberate divergence and may read
+however they read; a message both implementations emit is **contract**, and has to match byte for
+byte. It does.
+
+The CLI classes moved with it: `consensus_no_polisher` left the traceback class for the exact one
+(30 exact, 15 traceback now), because it is no longer a crash to approximate but a run to reproduce.
 
 The mirror case is silent: `--medaka` or `--racon` **without** `--consensus` exits 0 and does nothing
 at all — no consensus, no warning.
@@ -1762,7 +1783,7 @@ measurement. Ordered by how much they matter.
 | ~~*Finding 1*~~ | ~~`--seed`, defaulting to a fixed value~~ | **Done**, `04b252f`. Was the port's only blocker |
 | *Finding 7* | take isONclust's guard for the empty-`error_rates` crash | turns a traceback into an explanation, same exit code. Nearly free; verify a no-op on every case that does not reach it |
 | *Finding 6* | `split("\t", 1)` in `write_fastq`, and move the required-input group off the top-level parser | makes a dead feature work on ONT data |
-| *Finding 4* | treat `--consensus` with no polisher as draft-only; reject a polisher with no `--consensus` | removes a crash after all the expensive work, and a silent no-op |
+| ~~*Finding 4*~~ | ~~treat `--consensus` with no polisher as draft-only; reject a polisher with no `--consensus`~~ | **Done**, in both implementations, for 0.4.0. Draft-only is the only consensus mode needing no external tools, since spoa is linked — it is what lets a standalone binary produce a consensus at all |
 | *Finding 10* | `if c_id2 in already_removed: continue` in the inner loop | stops double-counting reads and polishing one cluster twice. **Measure how much it moves real output first** — it did not fire on either committed corpus |
 | *Finding 5* | validate `--batch_type` as an enum in the parser | exit 1 traceback becomes exit 2 argparse error |
 | *Finding 8* | validate `(--k, --w)` against the probability table at parse time | 3 361 CLI-valid settings stop crashing with a `KeyError` |
