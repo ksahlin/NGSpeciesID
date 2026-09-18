@@ -3,15 +3,14 @@ NGSpeciesID
 
 NGSpeciesID is a tool for clustering and consensus forming of long-read amplicon sequencing data (has been used with both PacBio and Oxford Nanopore data). The repository is a modified version of [isONclust](https://github.com/ksahlin/isONclust), where consensus, primer-removal, and polishing feautures have been added.
 
-NGSpeciesID is distributed as a python package supported on Linux and macOS (including Apple Silicon), with python 3.12.
+Since 0.4.0 NGSpeciesID is a **Rust program**, distributed as a single binary for Linux and macOS, x86_64 and arm64. The original Python implementation is still here and is the reference the Rust one is checked against — see [docs/INSTALL-python.md](docs/INSTALL-python.md).
 
 Table of Contents
 =================
 
   * [INSTALLATION](#installation)
     * [Binaries](#binaries)
-    * [Conda](#conda)
-    * [Building the Rust implementation from source](#building-the-rust-implementation-from-source)
+    * [From source](#from-source)
     * [Python implementation](#python-implementation)
     * [Testing installation](#testing-installation)
   * [USAGE](#usage)
@@ -27,50 +26,45 @@ Table of Contents
 INSTALLATION
 ----------------
 
-NGSpeciesID has been **re-implemented in Rust** (2026-09). It produces byte-identical output to the
-Python implementation and is 3-6x faster at clustering. Both are in this repository.
-
 ### Binaries
 
-Prebuilt binaries for Linux and macOS, x86_64 and arm64, are attached to every
-[release](https://github.com/ksahlin/NGSpeciesID/releases). Download, `chmod +x`, put on your `PATH`.
-
-`--consensus --racon` and `--consensus --medaka` additionally need `racon`, `minimap2` and `medaka`
-on your `PATH`; the conda environment below provides them.
-
-### Conda
+Download for your platform from the
+[latest release](https://github.com/ksahlin/NGSpeciesID/releases/latest), then:
 
 ```
-conda create -n NGSpeciesID -c conda-forge -c bioconda python=3.12 pip medaka spoa racon minimap2 samtools
-conda activate NGSpeciesID
-pip install --no-deps NGSpeciesID
+tar xzf NGSpeciesID-v0.4.0-linux-x86_64.tar.gz
+chmod +x NGSpeciesID-v0.4.0-linux-x86_64/NGSpeciesID
 ```
 
-The `--no-deps` is required, not optional — see [docs/INSTALL.md](docs/INSTALL.md).
+Put it on your `PATH`. Clustering and `--consensus` need **nothing else** — `spoa` is built in.
 
-### Building the Rust implementation from source
+Polishing needs three more programs on your `PATH`:
+
+```
+conda create -n ngspeciesid-tools -c conda-forge -c bioconda racon minimap2 medaka samtools
+conda activate ngspeciesid-tools
+```
+
+`--racon` uses `racon` and `minimap2`; `--medaka` uses `medaka`.
+
+### From source
 
 ```
 cargo build --release --manifest-path rust/Cargo.toml
 ```
 
-Needs Rust 1.88+, plus `cmake`, `libclang` and `pkg-config`. `--no-default-features` builds with a
-pure-Rust aligner and needs none of those.
+Needs Rust 1.88+, `cmake`, `libclang` and `pkg-config`. Add `--no-default-features` to build with a
+pure-Rust aligner and need nothing but a Rust toolchain.
 
 ### Python implementation
 
-The original Python implementation is still here, still supported, and is the reference the Rust port
-is checked against on every commit. `pip install NGSpeciesID` installs it.
+Still here, still supported, and still the reference the Rust one is checked against on every commit:
+[docs/INSTALL-python.md](docs/INSTALL-python.md).
 
-Installation details, build dependencies and cross-platform caveats: [docs/INSTALL.md](docs/INSTALL.md).
-Changes between versions: [CHANGELOG.md](CHANGELOG.md).
+Build details, which modes need which external tools, and cross-platform caveats:
+[docs/INSTALL.md](docs/INSTALL.md). Changes between versions: [CHANGELOG.md](CHANGELOG.md).
 
 ### Testing installation
-
-0. Activate conda environment
-```
-conda activate NGSpeciesID
-```
 
 1. Make a new directory and navigate to it
 ```
@@ -95,6 +89,14 @@ On this input the run reports `Finished Clustering: 2 clusters formed` and
 The polished sequence is `sample_h1/medaka_cl_id_17/consensus.fasta`, whose header records how many
 reads supported it. Substituting `--racon` for `--medaka` gives the same shape of output under
 `sample_h1/racon_cl_id_17/` in about three seconds.
+
+To check the binary alone, with no other program installed, drop the polisher:
+
+```
+NGSpeciesID --ont --fastq sample_h1.fastq --outfolder ./sample_h1 --consensus
+```
+
+That writes the unpolished consensus to `sample_h1/consensus_reference_17.fasta` in about a second.
 
 
 USAGE
