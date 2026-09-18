@@ -300,10 +300,11 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 name = "ngspeciesid"
 version = "0.3.2"
 dependencies = [
+ "cxx",
  "libparasail-sys",
  "rustc-hash",
  "smallvec",
- "spoa",
+ "spoa-sys",
 ]
 
 [[package]]
@@ -447,16 +448,6 @@ name = "smallvec"
 version = "1.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
-
-[[package]]
-name = "spoa"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02650e403e996dd5c2566dbae45ea9113314675c2dffcf681e013ee6b631c6dd"
-dependencies = [
- "cxx",
- "spoa-sys",
-]
 
 [[package]]
 name = "spoa-sys"

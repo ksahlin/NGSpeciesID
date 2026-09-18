@@ -44,8 +44,9 @@ pub fn consensus(seqs: &[String], quals: &[String]) -> String {
     // g=-2 from the flag, and spoa's own defaults for e/q/c. Passing the
     // defaults explicitly rather than repeating -2 four times: spoa normalises
     // (g >= e means linear, then e := g) and the stored q/c are its own.
-    let mut engine = spoa::AlignmentEngine::new(spoa::AlignmentType::kSW, 5, -4, -2, -6, -10, -4);
-    let mut graph = spoa::Graph::new();
+    let mut engine =
+        crate::spoa::AlignmentEngine::new(crate::spoa::AlignmentType::kSW, 5, -4, -2, -6, -10, -4);
+    let mut graph = crate::spoa::Graph::new();
     for (i, s) in seqs.iter().enumerate() {
         let b = s.as_bytes();
         let aln = engine.align(b, &graph);

@@ -39,6 +39,7 @@ mod pyfloat;
 mod pyrandom;
 mod pyround;
 mod sorting;
+mod spoa;
 mod sweep;
 mod text;
 mod write_fastq;
