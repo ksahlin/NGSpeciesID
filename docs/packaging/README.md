@@ -4,15 +4,19 @@ Packaging
 `bioconda-meta.yaml` is the updated bioconda recipe, ready to submit. It is kept here so the
 checksum and the reasoning live with the release that produced them.
 
+**It targets 0.4.1, not 0.4.0.** 0.4.0 is a valid git tag with valid binaries, but its `setup.py`
+lacks `long_description_content_type`, so it cannot be published to PyPI and there is no reason to
+put it on bioconda either. 0.4.1 is byte-identical in behaviour.
+
 ## Submitting it
 
 ```
 git clone https://github.com/<you>/bioconda-recipes    # your fork
 cd bioconda-recipes
-git checkout -b ngspeciesid-0.4.0
+git checkout -b ngspeciesid-0.4.1
 cp <this repo>/docs/packaging/bioconda-meta.yaml recipes/ngspeciesid/meta.yaml
-git commit -am "Update ngspeciesid to 0.4.0"
-git push origin ngspeciesid-0.4.0
+git commit -am "Update ngspeciesid to 0.4.1"
+git push origin ngspeciesid-0.4.1
 ```
 
 Then open a PR against `bioconda/bioconda-recipes`. Their CI builds it; a maintainer merges.
@@ -23,8 +27,8 @@ Four lines.
 
 | line | 0.3.1 | 0.4.0 | why |
 | --- | --- | --- | --- |
-| `version` | 0.3.1 | 0.4.0 | |
-| `sha256` | `ddd378a6…` | `2fc90547…` | of `v0.4.0.tar.gz`, computed from the downloaded tag archive |
+| `version` | 0.3.1 | 0.4.1 | |
+| `sha256` | `ddd378a6…` | `0800e5e3…` | of `v0.4.1.tar.gz`, computed from the downloaded tag archive |
 | `host: python` | >=3.10 | **>=3.12** | |
 | `run: python` | >=3.10 | **>=3.12** | |
 
