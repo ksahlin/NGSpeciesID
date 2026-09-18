@@ -28,12 +28,13 @@ INSTALLATION
 
 ### Binaries
 
-Download for your platform from the
-[latest release](https://github.com/ksahlin/NGSpeciesID/releases/latest), then:
+Download the archive for your platform — `linux-x86_64`, `linux-aarch64`, `macos-x86_64` or
+`macos-aarch64` — from the [latest release](https://github.com/ksahlin/NGSpeciesID/releases/latest),
+then:
 
 ```
-tar xzf NGSpeciesID-v0.4.0-linux-x86_64.tar.gz
-chmod +x NGSpeciesID-v0.4.0-linux-x86_64/NGSpeciesID
+tar xzf NGSpeciesID-*.tar.gz
+chmod +x NGSpeciesID-*/NGSpeciesID
 ```
 
 Put it on your `PATH`. Clustering and `--consensus` need **nothing else** — `spoa` is built in.
