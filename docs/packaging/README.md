@@ -4,15 +4,19 @@ Packaging
 `bioconda-meta.yaml` is the updated bioconda recipe, ready to submit. It is kept here so the
 checksum and the reasoning live with the release that produced them.
 
+**It targets 0.4.1, not 0.4.0.** 0.4.0 is a valid git tag with valid binaries, but its `setup.py`
+lacks `long_description_content_type`, so it cannot be published to PyPI and there is no reason to
+put it on bioconda either. 0.4.1 is byte-identical in behaviour.
+
 ## Submitting it
 
 ```
 git clone https://github.com/<you>/bioconda-recipes    # your fork
 cd bioconda-recipes
-git checkout -b ngspeciesid-0.4.0
+git checkout -b ngspeciesid-0.4.1
 cp <this repo>/docs/packaging/bioconda-meta.yaml recipes/ngspeciesid/meta.yaml
-git commit -am "Update ngspeciesid to 0.4.0"
-git push origin ngspeciesid-0.4.0
+git commit -am "Update ngspeciesid to 0.4.1"
+git push origin ngspeciesid-0.4.1
 ```
 
 Then open a PR against `bioconda/bioconda-recipes`. Their CI builds it; a maintainer merges.
@@ -23,10 +27,59 @@ Four lines.
 
 | line | 0.3.1 | 0.4.0 | why |
 | --- | --- | --- | --- |
-| `version` | 0.3.1 | 0.4.0 | |
-| `sha256` | `ddd378a6…` | `2fc90547…` | of `v0.4.0.tar.gz`, computed from the downloaded tag archive |
-| `host: python` | >=3.10 | **>=3.12** | |
-| `run: python` | >=3.10 | **>=3.12** | |
+| `version` | 0.3.1 | 0.4.1 | |
+| `sha256` | `ddd378a6…` | `0800e5e3…` | of `v0.4.1.tar.gz`, computed from the downloaded tag archive |
+| `host: python` | >=3.10 | **>=3.12,<3.13** | |
+| `run: python` | >=3.10 | **>=3.12,<3.13** | |
+
+### The recipe depended on the wrong package, and had since before 0.4.1
+
+`run:` listed `edlib >=1.1.2`. The code's `import edlib` comes from **`python-edlib`**, which is a
+different bioconda package:
+
+| package | linux-64 builds | provides `import edlib` |
+| --- | --- | --- |
+| `edlib` | 1.2.0–1.2.3, **no `python_abi`** | no |
+| `python-edlib` | builds for 3.10, 3.11, 3.12, 3.13 | yes |
+
+It worked anyway because **`medaka` depends on `python-edlib`**, so the module arrived transitively
+while the declared dependency resolved to a package that supplies nothing importable. Note the
+asymmetry that gives it away: `parasail-python` sits on the next line, named correctly.
+
+Tightening the python bound removed the slack that hid it — the solver started reaching for
+`edlib==1.3.9=py37...`, a Python 3.7 build, and failed:
+
+```
+Unsatisfiable dependencies for platform linux-64:
+  {MatchSpec("edlib==1.3.9=py37h2527ec5_0"), MatchSpec("python[version='>=3.7,<3.8.0a0']")}
+```
+
+Confirmed against the working reference environment, which contains `python-edlib 1.3.9.post1` and
+no `edlib` at all.
+
+This is a real fix rather than a version bump: the package now declares what it actually needs
+instead of relying on a transitive dependency of a *polisher* to supply a core import.
+
+### The upper bound is not optional, and bioconda's CI proved it
+
+The first attempt used a bare `python >=3.12` and **failed bioconda's Linux test** while the
+autobump bot's PR, which kept `>=3.10`, passed everything. An open-ended floor lets the solver reach
+for 3.13 and 3.14 — it tried `python-3.14.0rc1` — and `python-edlib` publishes builds only up to
+3.13:
+
+```
+nothing provides _python_rc needed by python-3.14.0rc1
+edlib [1.1.2|1.2.0|1.2.1|1.2.3] conflicts with any installable versions previously reported
+```
+
+`medaka` 2.2.2 declares `python >=3.12,<3.13.0a0` for itself, so 3.12 is the environment in practice
+either way; `>=3.12,<3.13` simply states it and removes the solver's freedom to try interpreters the
+dependencies do not support.
+
+The lesson is narrow and worth keeping: **raising a floor without an upper bound is not a
+conservative change** in a package whose dependencies have per-interpreter builds.
+
+### The python floor itself
 
 The python floor is the only judgement call. `medaka` 2.2.x requires 3.12 anyway, so in practice the
 solve already pulled it — but more importantly, **before CPython 3.12 `sum()` over a set of floats is
