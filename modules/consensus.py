@@ -212,10 +212,16 @@ def polish_sequences(centers, args):
     for file in glob.glob(spoa_pattern):
         os.remove(file)
 
+    # An optional sample name PREFIXES the header rather than being appended,
+    # so the `consensus_cl_id_<id>` and trailing `_total_supporting_reads_<n>`
+    # that people already parse (issue #24) keep their shape, and so medaka's
+    # own `_segment0` suffix still lands at the end.
+    name_prefix = "{0}_".format(args.sample_name) if args.sample_name else ""
+
     for i, (nr_reads_in_cluster, c_id, center, all_reads) in enumerate(centers):
         spoa_center_file = os.path.join(args.outfolder, "consensus_reference_{0}.fasta".format(c_id))
         with open(spoa_center_file, "w") as f:
-            f.write(">{0}\n{1}\n".format("consensus_cl_id_{0}_total_supporting_reads_{1}".format(c_id, nr_reads_in_cluster), center))
+            f.write(">{0}\n{1}\n".format("{0}consensus_cl_id_{1}_total_supporting_reads_{2}".format(name_prefix, c_id, nr_reads_in_cluster), center))
         
         nr_reads_used = 0
         all_reads_file = os.path.join(args.outfolder, "reads_to_consensus_{0}.fastq".format(c_id))

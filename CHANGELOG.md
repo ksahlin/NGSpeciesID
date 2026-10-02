@@ -1,6 +1,36 @@
 Changelog
 =========
 
+## Unreleased
+
+### `--sample_name`
+
+New flag. It prefixes the consensus fasta headers with a sample name, so consensus sequences from
+different samples can be told apart once they are concatenated:
+
+```
+$ NGSpeciesID --ont --fastq bc01.fastq --outfolder bc01 --consensus --medaka --sample_name bc01
+$ head -1 bc01/medaka_cl_id_3/consensus.fasta
+>bc01_consensus_cl_id_3_total_supporting_reads_812
+```
+
+Without it the headers are `consensus_cl_id_<id>_total_supporting_reads_<n>` and carry nothing that
+identifies the sample, so `cat */medaka_cl_id*/consensus.fasta > all.fa` across a barcode set — the
+recipe given in issue #24 — produces a file in which the records cannot be attributed. Reported by a
+collaborator; see also issue #14.
+
+The name is a **prefix**, not a suffix, so `consensus_cl_id_<id>` and the trailing
+`_total_supporting_reads_<n>` that people already parse keep their shape, and medaka's own
+`_segment0` suffix still lands at the end. It propagates through racon and medaka, because the draft
+fasta is the polisher's target.
+
+Default is empty, which is byte-identical to every previous release. A name containing whitespace is
+rejected rather than silently truncated at the first space by every downstream fasta parser.
+
+One existing invocation changes: `--sample` was a unique abbreviation of `--sample_size` and is now
+ambiguous between `--sample_size` and `--sample_name`. `--sample_s` and longer still resolve. This is
+argparse's own prefix matching and both implementations do it.
+
 ## 0.4.1
 
 Packaging only. No change to behaviour or output; 0.4.1 is byte-identical to 0.4.0.

@@ -16,6 +16,7 @@ Table of Contents
   * [USAGE](#usage)
     * [Filtering and subsampling](#filtering-and-subsampling)
     * [Removing primers](#removing-primers)
+    * [Naming consensus sequences per sample](#naming-consensus-sequences-per-sample)
     * [Output](#output)
   * [EXAMPLE WORKFLOW](#example-workflow)
   * [CREDITS](#credits)
@@ -178,6 +179,24 @@ NGSpeciesID --ont --consensus --medaka --fastq [reads.fastq] --outfolder [/path/
 ```
 
 The two options are mutually exclusive, i.e., only one of them can be run.
+
+### Naming consensus sequences per sample
+
+The consensus fasta headers are `consensus_cl_id_<id>_total_supporting_reads_<n>`, which say nothing
+about which sample they came from. When several samples are processed in a loop and the results
+concatenated, the records cannot be told apart. `--sample_name` prefixes the headers:
+
+```
+NGSpeciesID --ont --consensus --medaka --fastq bc01.fastq --outfolder bc01 --sample_name bc01
+```
+
+```
+>bc01_consensus_cl_id_3_total_supporting_reads_812
+```
+
+so that `cat */medaka_cl_id*/consensus.fasta > all_consensi.fa` gives a file whose records are
+attributable. The name is a prefix, so anything already parsing the cluster id or the supporting-read
+count keeps working. It cannot contain whitespace, since a fasta identifier ends at the first space.
 
 ### Output
 

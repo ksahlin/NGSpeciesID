@@ -698,6 +698,18 @@ cmd_cli() {
   rm -rf "$WORK/uo_missing"
   cli_case use_old_missing --use_old_sorted_file --outfolder "$WORK/uo_missing" --t 1 --ont
   cli_case consensus_no_polisher --ont --fastq "$CORPUS" --outfolder "$WORK/cnp" --t 1 --consensus
+
+  # --- --sample_name prefixes the consensus fasta headers so consensuses from
+  # --- different samples survive being concatenated (issue #24). The name
+  # --- becomes a fasta IDENTIFIER, which ends at the first whitespace, so a
+  # --- name containing one is rejected rather than silently truncated
+  # --- downstream. Both bytes are the reference's, in both implementations.
+  rm -rf "$WORK/sn"
+  CLI_CASE_OUTDIR="$WORK/sn" \
+  cli_case sample_name --ont --fastq "$CORPUS" --outfolder "$WORK/sn" --t 1 \
+                       --consensus --sample_name bc01
+  cli_case sample_name_space --ont --fastq "$CORPUS" --outfolder "$WORK/sns" --t 1 \
+                       --consensus --sample_name "my sample"
   cli_case max_seqs_zero --ont --fastq "$CORPUS" --outfolder "$WORK/msz" --t 1 \
                          --consensus --racon --max_seqs_for_consensus 0
 

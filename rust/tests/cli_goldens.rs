@@ -105,23 +105,35 @@ struct Case {
     args: Vec<String>,
 }
 
+/// A scratch output folder. The reference creates `--outfolder` before the
+/// validation that rejects the case, so a case that names one really does leave
+/// a directory behind; it goes under the build directory rather than the repo.
+fn scratch_outdir(name: &str) -> String {
+    let mut p = std::env::current_exe().expect("current_exe");
+    p.pop();
+    if p.ends_with("deps") {
+        p.pop();
+    }
+    p.join(format!("cli_scratch_{name}"))
+        .to_string_lossy()
+        .into_owned()
+}
+
 fn c(name: &'static str, args: &[&str]) -> Case {
     Case {
         name,
         args: args
             .iter()
-            .map(|a| {
-                if *a == "@CORPUS" {
-                    corpus()
-                } else {
-                    (*a).to_string()
-                }
+            .map(|a| match *a {
+                "@CORPUS" => corpus(),
+                "@OUTDIR" => scratch_outdir(name),
+                _ => (*a).to_string(),
             })
             .collect(),
     }
 }
 
-/// The 23 exact cases, with the same arguments `bench/equivalence.sh` uses.
+/// The 22 exact cases, with the same arguments `bench/equivalence.sh` uses.
 /// Kept in the same order as `cmd_cli` so the two can be read side by side.
 fn exact_cases() -> Vec<Case> {
     vec![
@@ -151,6 +163,24 @@ fn exact_cases() -> Vec<Case> {
         c(
             "w_gt_100",
             &["--fastq", "@CORPUS", "--k", "15", "--w", "101"],
+        ),
+        // Rejected during validation, before any work, so this is cheap even
+        // though it names --consensus. The message is the REFERENCE's own
+        // logging.error, so its bytes are contract.
+        c(
+            "sample_name_space",
+            &[
+                "--ont",
+                "--fastq",
+                "@CORPUS",
+                "--outfolder",
+                "@OUTDIR",
+                "--t",
+                "1",
+                "--consensus",
+                "--sample_name",
+                "my sample",
+            ],
         ),
         // exact_m and exact_f are traceback-class in the harness -- the
         // reference reaches a TypeError -- but the port replaces them with a
@@ -227,9 +257,10 @@ fn exact_cases_match_their_goldens() {
         checked,
         failures.join("\n")
     );
-    // A test that checked nothing must not report success. The list is 21 of
-    // the 23 exact cases; exact_m and exact_f are excluded above, with a reason.
-    assert_eq!(checked, 21, "every listed case must have been checked");
+    // A test that checked nothing must not report success. The list is 22 of
+    // the 32 exact cases; exact_m and exact_f are excluded above, with a reason,
+    // and the rest need a corpus run the harness already covers.
+    assert_eq!(checked, 22, "every listed case must have been checked");
 }
 
 /// The first line that differs, so a failure says where rather than dumping
@@ -281,7 +312,7 @@ fn the_text_constants_still_match_the_goldens() {
         );
     }
     // The two usage blocks are derived rather than whole files: the main one is
-    // the first 21 lines of any exit-2 case's stderr, and the subparser's is
+    // the first 22 lines of any exit-2 case's stderr, and the subparser's is
     // the first 2 lines of its help.
     let usage = std::fs::read_to_string(t.join("usage.txt")).expect("usage.txt");
     let noargs = std::fs::read_to_string(g.join("noargs/stderr")).expect("noargs");
@@ -289,7 +320,7 @@ fn the_text_constants_still_match_the_goldens() {
         noargs.starts_with(&usage),
         "usage.txt is not the head of the recorded exit-2 stderr"
     );
-    assert_eq!(usage.lines().count(), 21);
+    assert_eq!(usage.lines().count(), 22);
 
     let wf_usage =
         std::fs::read_to_string(t.join("write_fastq_usage.txt")).expect("write_fastq_usage.txt");

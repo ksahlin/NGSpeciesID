@@ -3,6 +3,7 @@
 # which leaves git permanently dirty and hides real changes in the noise.
 # git records when it was committed; what matters for validity is below.
 # corpus:   Supplementary_File1_reads.fastq  sha256 016bfcd7393e81d1752514de4f179c6e1d88a08370d19062b9ed179dea0a3831
+# primer:   Supplementary_File3_primer.txt  sha256 5815df19a664e40cf13e5f2607c8536f1b0a97763340151f734db8617af573c8
 # reference: python 3.12.14, parasail + edlib
 # spoa: 4.1.5
 # racon: 1.5.0

@@ -5,8 +5,9 @@ usage: NGSpeciesID [-h] [--version] [--debug]
                    [--abundance_ratio ABUNDANCE_RATIO]
                    [--rc_identity_threshold RC_IDENTITY_THRESHOLD]
                    [--max_seqs_for_consensus MAX_SEQS_FOR_CONSENSUS]
-                   [--medaka | --racon] [--medaka_model MEDAKA_MODEL]
-                   [--medaka_fastq] [--racon_iter RACON_ITER]
+                   [--sample_name SAMPLE_NAME] [--medaka | --racon]
+                   [--medaka_model MEDAKA_MODEL] [--medaka_fastq]
+                   [--racon_iter RACON_ITER]
                    [--remove_universal_tails | --primer_file PRIMER_FILE]
                    [--primer_max_ed PRIMER_MAX_ED] [--trim_window TRIM_WINDOW]
                    [--m TARGET_LENGTH] [--s TARGET_DEVIATION]
@@ -59,6 +60,11 @@ options:
                         Maximum number of seqs to form consensus with spoa
                         [INT] (default = -1, which means to use all sequences
                         available regardless of cluster size). (default: -1)
+  --sample_name SAMPLE_NAME
+                        Prefix the consensus fasta headers with this sample
+                        name, so consensus sequences from different samples
+                        can be told apart when concatenated (default = "",
+                        which means no prefix). (default: )
   --medaka              Run final medaka polishing algorithm. (default: False)
   --racon               Run final racon polishing algorithm. (default: False)
   --medaka_model MEDAKA_MODEL

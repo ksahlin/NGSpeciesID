@@ -198,11 +198,11 @@ below were filled in as each stage landed, and the dates are in the commits.
 | determinism gate | **done, and it fails twice** | *Finding 1* (`--sample_size`) and *Finding 2* (Python ≤3.11) |
 | interpreter decision | **taken: pin ≥3.12** | same decision as isONclust, same reason. The README recommending 3.11 is *Finding 2* |
 | `--sample_size` decision | **taken: `--seed`, fixed default 0** | *Finding 1*. Commit `04b252f`; verified a no-op on 24 of 24 cases and reproducible through the consensus stage. **The port's one blocker is gone** |
-| CLI contract captured | **done, 45 cases recorded** | `bench/golden/<corpus>/cli/` — exit code, stdout and stderr, scrubbed of paths, timings and traceback line numbers. *The exit-code contract* |
+| CLI contract captured | **done, 47 cases recorded** | `bench/golden/<corpus>/cli/` — exit code, stdout and stderr, scrubbed of paths, timings and traceback line numbers. *The exit-code contract* |
 | output goldens recorded | **done, 55 cases on each of six corpora** | `bench/golden/<corpus>/manifest.tsv`. Includes every `--consensus` case, both polishers, and the `--t > 1` merge intermediates |
 | goldens are reproducible | **done** | `equivalence.sh stable` records the whole matrix twice and diffs: 191 checks, identical. It found two real defects on the way — *Finding 23* and *Finding 24* |
 | the harness itself is tested | **done** | five deliberately-broken "ports" run against the goldens; see *Has the harness got teeth?* |
-| **CLI parity** | **done, all 45 cases, on all six corpora** | `equivalence.sh cli verify`: **29 exact byte-identical, 16 traceback, 0 pending**. Two of the traceback cases also pin the files left behind. `cli_audit` counts the classes both ways, so a case cannot be added without being classified |
+| **CLI parity** | **done, all 47 cases, on all six corpora** | `equivalence.sh cli verify`: **32 exact byte-identical, 15 traceback, 0 pending**. Three cases also pin the files left behind. `cli_audit` counts the classes both ways, so a case cannot be added without being classified |
 | **the sorting stage** | **done, byte-identical on all six corpora** | `equivalence.sh stage sort`: **52 of 52**. `sorted.fastq` and `logfile.txt` |
 | **the clustering engine, `--t 1`** | **done, byte-identical on all six corpora** | carried across from isONclust with four deliberate changes; `--symmetric_map_align_thresholds` written from scratch |
 | **`--t > 1`** | **done, byte-identical on all six corpora** | `parallelize.rs`, including every per-iteration `<n>/pre_clusters.csv` and `<n>/cluster_origins.csv`. The batch counts, the merge walk and the iteration count all match |
@@ -352,15 +352,20 @@ Processes are spawned with `mp.set_start_method('spawn')`, so workers do not inh
 
 ### Ported — inside the equivalence contract
 
-All 39 live flags. Clustering: `--fastq`, `--outfolder`, `--version`, `-h`/`--help`, `--debug`, `--k`,
+All 40 live flags. Clustering: `--fastq`, `--outfolder`, `--version`, `-h`/`--help`, `--debug`, `--k`,
 `--w`, `--q`, `--t`, `--d`, `--ont`, `--isoseq`, `--min_shared`, `--mapped_threshold`,
 `--aligned_threshold`, `--symmetric_map_align_thresholds`, `--min_fraction`, `--min_prob_no_hits`,
 `--batch_type`, `--use_old_sorted_file`, `--m`, `--s`, `--sample_size`, `--top_reads`, `--seed`.
 Consensus:
 `--consensus`, `--abundance_ratio`, `--rc_identity_threshold`, `--max_seqs_for_consensus`, `--medaka`,
 `--racon`, `--medaka_model`, `--medaka_fastq`, `--racon_iter`, `--remove_universal_tails`,
-`--primer_file`, `--primer_max_ed`, `--trim_window`. Plus the `write_fastq` subcommand with
-`--clusters`, `--fastq`, `--outfolder`, `--N`.
+`--primer_file`, `--primer_max_ed`, `--trim_window`, `--sample_name`. Plus the `write_fastq`
+subcommand with `--clusters`, `--fastq`, `--outfolder`, `--N`.
+
+`--sample_name` is the one flag that did not exist in the reference when the port began. It was added
+to **both** implementations at once, with the same help text, the same validation message and the
+same output, so it is contract in exactly the way the other 39 are, and not a divergence. Default
+empty, which is why every golden recorded before it still verifies unchanged.
 
 `--ont` is exactly `--k 13 --w 20`; `--isoseq` is exactly `--k 15 --w 50`. Both need their own
 equivalence case, because a preset silently resolving to the wrong numbers is invisible in output
@@ -666,13 +671,13 @@ Two smaller lessons from the same episode, both mine rather than the code's:
 
 ### The exit-code contract
 
-**45 cases are recorded** in `bench/golden/<corpus>/cli/`, each with its exit code, stdout and
-stderr — and two of them also record the **files left in the output folder**, because for those two
+**47 cases are recorded** in `bench/golden/<corpus>/cli/`, each with its exit code, stdout and
+stderr — and three of them also record the **files left in the output folder**, because for those
 the side effects are the contract and the message is not (see `CLI_CASE_OUTDIR`, and *Finding 18*).
 Every exit code below is measured, and several of them are wrong in an interesting way and are
 contract regardless.
 
-The classes are **29 exact, 16 traceback, 0 pending**. That last number was 6 for most of the port:
+The classes are **32 exact, 15 traceback, 0 pending**. That last number was 6 for most of the port:
 `abbrev_outf`, `ont_over_k`, `k_then_ont`, `isoseq_over_w`, `medaka_no_consensus` and
 `q_filters_all` are full runs of the tool, deferred until the stages existed. The stages existed for
 some time before anyone re-tested them — all six are byte-identical, medaka included — and until
@@ -2006,7 +2011,7 @@ Carried over from the isONcorrect, isONform and isONclust ports. The full versio
 measurements behind each point, are in those repositories' `PORTING.md`.
 
 1. **CLI parity first**, locked by unit tests. Argument names, defaults, validation order, message
-   text and exit codes. **39 flags** as of 0.4.0. Twenty multi-word ones need explicit
+   text and exit codes. **39 flags** as of 0.4.0, 40 with `--sample_name`. Twenty multi-word ones need explicit
    `long = "..."`; eight are double-dash single-letter; five of those carry a `dest` that differs
    from the flag; argparse prefix abbreviation is live in all three of its behaviours.
 2. **Differential oracles, not end-to-end tests.** Wrap the reference without modifying it; dump each

@@ -466,13 +466,24 @@ pub fn polish_sequences(
         }
     }
 
+    // An optional --sample_name PREFIXES the header rather than being appended,
+    // so `consensus_cl_id_<id>` and the trailing `_total_supporting_reads_<n>`
+    // that people already parse (issue #24) keep their shape, and medaka's own
+    // `_segment0` suffix still lands at the end. Empty by default, which is
+    // byte-identical to every golden recorded before the flag existed.
+    let name_prefix = if args.sample_name.is_empty() {
+        String::new()
+    } else {
+        format!("{}_", args.sample_name)
+    };
+
     for center in centers.iter_mut() {
         let c_id = center.c_id;
         let draft = outfolder.join(format!("consensus_reference_{c_id}.fasta"));
         std::fs::write(
             &draft,
             format!(
-                ">consensus_cl_id_{c_id}_total_supporting_reads_{}\n{}\n",
+                ">{name_prefix}consensus_cl_id_{c_id}_total_supporting_reads_{}\n{}\n",
                 center.nr_reads, center.seq
             ),
         )
