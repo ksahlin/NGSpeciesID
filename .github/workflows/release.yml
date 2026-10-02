@@ -23,8 +23,45 @@ defaults:
     shell: bash
 
 jobs:
+  # The release OBJECT, created before anything tries to upload to it.
+  #
+  # This job exists because 0.5.0 shipped without it and two of the four
+  # binaries failed with a bare `release not found`: `gh release upload`
+  # does not create a release, so the whole workflow silently depended on
+  # someone having made one by hand first, in the minutes between pushing the
+  # tag and the first job finishing its build. Two jobs won that race and two
+  # lost it.
+  #
+  # Notes come from the ANNOTATED TAG's message, so `git tag -a v1.2.3` is the
+  # one place the release is described and there is nothing to keep in sync.
+  # `--verify-tag` refuses to invent a release for a tag that does not exist.
+  release:
+    name: Create the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          # Annotated tag messages do not come with a shallow clone.
+          fetch-depth: 0
+      - name: Create it if it is not already there
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag already exists -- leaving it alone"
+            exit 0
+          fi
+          gh release create "$tag" \
+            --verify-tag \
+            --title "NGSpeciesID ${tag#v}" \
+            --notes-from-tag
+
   binaries:
     name: ${{ matrix.label }}
+    needs: release
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
