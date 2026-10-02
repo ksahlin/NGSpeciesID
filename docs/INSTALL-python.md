@@ -21,9 +21,11 @@ in each new shell.
 
 | where | version |
 | --- | --- |
-| PyPI (`pip install NGSpeciesID`) | **0.4.1** |
+| PyPI (`pip install NGSpeciesID`) | **0.5.0** |
 | bioconda (`conda install ngspeciesid`) | 0.3.1 until [the recipe update](https://github.com/bioconda/bioconda-recipes/pull/69371) merges |
-| this repository, and the binaries | **0.4.1** |
+| this repository, and the binaries | **0.5.0** |
+
+0.5.0 adds `--sample_name`; see the [changelog](../CHANGELOG.md).
 
 0.4.0 exists as a git tag with working binaries, but it cannot be published to PyPI: its `setup.py`
 omits `long_description_content_type`, so the project page would not render. 0.4.1 is that fix and is

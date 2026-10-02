@@ -194,7 +194,7 @@ def write_fastq(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Reference-free clustering and consensus forming of targeted ONT or PacBio reads", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--version', action='version', version='%(prog)s 0.4.1')
+    parser.add_argument('--version', action='version', version='%(prog)s 0.5.0')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     reads_file = parser.add_mutually_exclusive_group(required=True)
     reads_file.add_argument('--fastq', type=str, help='Path to consensus fastq file(s)')
@@ -210,6 +210,7 @@ if __name__ == '__main__':
     parser.add_argument('--abundance_ratio', type=float, default=0.1, help='Threshold for --consensus algorithm. Consider only clusters larger than a fraction of number of total reads (default 0.1)')
     parser.add_argument('--rc_identity_threshold', type=float, default=0.9, help='Threshold for --consensus algorithm. Define a reverse complement if identity is over this threshold (default 0.9)')
     parser.add_argument('--max_seqs_for_consensus', type=int, default=-1,  help='Maximum number of seqs to form consensus with spoa [INT] (default = -1, which means to use all sequences available regardless of cluster size).')
+    parser.add_argument('--sample_name', type=str, default="", help='Prefix the consensus fasta headers with this sample name, so consensus sequences from different samples can be told apart when concatenated (default = "", which means no prefix).')
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--medaka', action="store_true", help='Run final medaka polishing algorithm.')
@@ -300,6 +301,13 @@ if __name__ == '__main__':
         polisher = '--medaka' if args.medaka else '--racon'
         logging.error('{0} polishes a consensus, so it needs --consensus. '
                       'Add --consensus, or drop {0}.'.format(polisher))
+        sys.exit(1)
+
+    # The sample name becomes part of a fasta identifier, and an identifier ends
+    # at the first whitespace. A name with a space in it would be silently
+    # truncated by every downstream parser instead of failing here.
+    if args.sample_name and len(args.sample_name.split()) != 1:
+        logging.error('--sample_name becomes part of the fasta header, so it cannot contain whitespace.')
         sys.exit(1)
 
     main(args)

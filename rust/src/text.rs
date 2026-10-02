@@ -23,7 +23,7 @@ pub const VERSION: &str = include_str!("text/version.txt");
 /// `write_fastq --help`, on **stdout**, exit 0.
 pub const WRITE_FASTQ_HELP: &str = include_str!("text/write_fastq_help.txt");
 
-/// The 21-line usage block that precedes every argparse error, on **stderr**,
+/// The 22-line usage block that precedes every argparse error, on **stderr**,
 /// exit 2. Byte-identical across all 14 recorded exit-2 cases, which is why it
 /// is one constant and not fourteen.
 pub const USAGE: &str = include_str!("text/usage.txt");
@@ -87,14 +87,14 @@ mod tests {
 
     #[test]
     fn usage_block_is_the_recorded_shape() {
-        assert_eq!(USAGE.lines().count(), 21, "the usage block is 21 lines");
+        assert_eq!(USAGE.lines().count(), 22, "the usage block is 22 lines");
         assert!(USAGE.starts_with("usage: NGSpeciesID [-h] [--version] [--debug]\n"));
         assert!(USAGE.ends_with("{write_fastq} ...\n"));
     }
 
     #[test]
     fn version_is_the_reference_string_not_the_crate_version() {
-        assert_eq!(VERSION, "NGSpeciesID 0.4.1\n");
+        assert_eq!(VERSION, "NGSpeciesID 0.5.0\n");
     }
 
     #[test]
@@ -131,6 +131,6 @@ mod tests {
             e.lines().last().unwrap(),
             "NGSpeciesID: error: argument --k: invalid int value: 'abc'"
         );
-        assert_eq!(e.lines().count(), 22, "21 lines of usage plus one of error");
+        assert_eq!(e.lines().count(), 23, "22 lines of usage plus one of error");
     }
 }

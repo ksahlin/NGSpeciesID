@@ -79,6 +79,7 @@ pub struct Args {
     pub abundance_ratio: f64,
     pub rc_identity_threshold: f64,
     pub max_seqs_for_consensus: i64,
+    pub sample_name: String,
     pub medaka: bool,
     pub racon: bool,
     pub medaka_model: String,
@@ -122,6 +123,7 @@ impl Default for Args {
             abundance_ratio: 0.1,
             rc_identity_threshold: 0.9,
             max_seqs_for_consensus: -1,
+            sample_name: String::new(),
             medaka: false,
             racon: false,
             medaka_model: String::new(),
@@ -215,6 +217,7 @@ const MAIN_OPTS: &[Opt] = &[
     o("--abundance_ratio", Kind::Float),
     o("--rc_identity_threshold", Kind::Float),
     o("--max_seqs_for_consensus", Kind::Int),
+    o("--sample_name", Kind::Str),
     g("--medaka", Kind::Flag, GROUP_POLISH),
     g("--racon", Kind::Flag, GROUP_POLISH),
     o("--medaka_model", Kind::Str),
@@ -594,6 +597,7 @@ fn store(args: &mut Args, opt: &Opt, raw: &str) -> Result<(), String> {
     let n = opt.name;
     match n {
         "--fastq" => args.fastq = Some(raw.to_string()),
+        "--sample_name" => args.sample_name = raw.to_string(),
         "--medaka_model" => args.medaka_model = raw.to_string(),
         "--primer_file" => args.primer_file = raw.to_string(),
         "--batch_type" => args.batch_type = raw.to_string(),
@@ -718,7 +722,19 @@ fn validate(mut args: Args) -> Outcome {
             1,
         );
     }
-    // 9. --max_seqs_for_consensus 0 writes an empty fasta and spoa aborts with
+    // 9. --sample_name becomes part of a fasta identifier, and an identifier
+    //    ends at the first whitespace, so a name with a space in it would be
+    //    silently truncated by every downstream parser. A SHARED message: the
+    //    reference has the same check in the same place, so these bytes are
+    //    contract, not a traceback replacement.
+    if !args.sample_name.is_empty() && args.sample_name.split_whitespace().count() != 1 {
+        return Outcome::Stderr(
+            "--sample_name becomes part of the fasta header, so it cannot contain whitespace.\n"
+                .to_string(),
+            1,
+        );
+    }
+    // 10. --max_seqs_for_consensus 0 writes an empty fasta and spoa aborts with
     //    SIGABRT. Finding 22. Note 0 is the ONLY bad value: -1 disables the
     //    cutoff and anything positive is fine.
     if args.consensus && args.max_seqs_for_consensus == 0 {
@@ -772,10 +788,10 @@ mod tests {
 
     #[test]
     fn every_live_flag_is_declared() {
-        // 39 flags in the reference plus --help, which argparse adds.
-        assert_eq!(MAIN_OPTS.len(), 38, "main parser options");
+        // 40 flags in the reference plus --help, which argparse adds.
+        assert_eq!(MAIN_OPTS.len(), 39, "main parser options");
         assert_eq!(WF_OPTS.len(), 5, "write_fastq options");
-        // 38 + 5 = 43 declarations for 39 live flags: --help twice, and
+        // 39 + 5 = 44 declarations for 40 live flags: --help twice, and
         // --fastq/--outfolder appear in both parsers.
     }
 
@@ -1330,6 +1346,79 @@ mod tests {
         assert!(d.medaka_model.is_empty());
         assert!(d.primer_file.is_empty());
         assert!(d.outfolder.is_none());
+        assert!(
+            d.sample_name.is_empty(),
+            "empty is what makes every pre-flag golden still byte-identical"
+        );
+    }
+
+    // --- --sample_name ------------------------------------------------------
+
+    #[test]
+    fn sample_name_is_parsed_and_defaults_to_empty() {
+        let run = |a: &[&str]| match p(a) {
+            Outcome::Run(x) => *x,
+            _ => panic!("expected Run"),
+        };
+        let base = ["--ont", "--fastq", "/dev/null", "--outfolder", "/tmp/x"];
+
+        assert_eq!(run(&base).sample_name, "");
+
+        let mut with = base.to_vec();
+        with.extend(["--sample_name", "bc01"]);
+        assert_eq!(run(&with).sample_name, "bc01");
+    }
+
+    #[test]
+    fn sample_name_with_whitespace_is_rejected() {
+        // A fasta identifier ends at the first whitespace, so the name would be
+        // silently truncated downstream. Byte-identical to the reference's
+        // logging.error -- no "Error: " prefix.
+        for bad in ["my sample", "a\tb", " "] {
+            match p(&[
+                "--ont",
+                "--fastq",
+                "/dev/null",
+                "--outfolder",
+                "/tmp/x",
+                "--sample_name",
+                bad,
+            ]) {
+                Outcome::Stderr(msg, 1) => assert_eq!(
+                    msg,
+                    "--sample_name becomes part of the fasta header, so it cannot contain whitespace.\n"
+                ),
+                _ => panic!("{bad:?} should be rejected"),
+            }
+        }
+    }
+
+    #[test]
+    fn sample_name_makes_sample_an_ambiguous_prefix() {
+        // Adding --sample_name means `--sample` is no longer a unique prefix of
+        // --sample_size. This is argparse's own behaviour and the reference does
+        // the same; it is recorded here because it is the one way the new flag
+        // changes an existing invocation.
+        match p(&["--sample", "5", "--fastq", "/dev/null"]) {
+            Outcome::UsageError(msg) => assert!(
+                msg.contains("ambiguous option: --sample could match"),
+                "got {msg:?}"
+            ),
+            _ => panic!("expected an ambiguity error"),
+        }
+        // A longer prefix still resolves.
+        match p(&[
+            "--sample_si",
+            "5",
+            "--ont",
+            "--fastq",
+            "/dev/null",
+            "--outfolder",
+            "/tmp/x",
+        ]) {
+            Outcome::Run(a) => assert_eq!(a.sample_size, 5),
+            _ => panic!("expected Run"),
+        }
     }
 
     // --- dest names that differ from the flag ------------------------------

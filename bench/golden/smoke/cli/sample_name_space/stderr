@@ -1,0 +1,1 @@
+--sample_name becomes part of the fasta header, so it cannot contain whitespace.

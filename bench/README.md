@@ -38,7 +38,7 @@ CORPUS=smoke GOLDEN=$PWD/bench/golden/smoke bench/equivalence.sh record
 | `dump_reference.py` | wraps the reference's own functions to dump a stage's inputs *and* outputs, for stages whose output never reaches a file |
 | `diffsummary.py` | says which **column** moved and by how much. A line diff is useless on these files: `final_cluster_origins.tsv` carries the full read sequence and quality string in columns 3 and 4, so one wrong float in column 6 prints four kilobytes |
 | `golden/<corpus>/manifest.tsv` | per-file sha256 for every case, plus the provenance the goldens are only valid under |
-| `golden/<corpus>/cli/<case>/` | `exit`, `stdout`, `stderr` for 44 CLI cases |
+| `golden/<corpus>/cli/<case>/` | `exit`, `stdout`, `stderr` for 47 CLI cases |
 | `env/resolved-*.txt` | what the reference environment actually resolved to |
 | `golden/<corpus>/sample/` | the `default` case's output as **heads**, so there is something to read by eye without running anything. Heads and not whole files: `final_clusters.tsv` is one line per read, each carrying a whole ONT accession, which is 686 KB on the 3 000-read corpus. The hashes in `manifest.tsv` are the contract; this directory is a courtesy |
 | `env/resolved-*.txt` | what the reference environment actually resolved to |
@@ -158,13 +158,13 @@ three `write_fastq` cases all crash before `--N` is read (PORTING.md, Finding 6)
    `pipefail` that aborted `setup_reference_env.sh` silently, skipping medaka and the
    resolved-versions file.
 
-## The 44 CLI cases are three classes, not one
+## The 47 CLI cases are three classes, not one
 
 | class | count | the port's obligation |
 | --- | --- | --- |
-| **exact** | 23 | byte-identical stdout, stderr and exit code. Checkable today, before any clustering exists |
+| **exact** | 32 | byte-identical stdout, stderr and exit code. Checkable today, before any clustering exists |
 | **traceback** | 15 | same exit code, non-empty stderr, and **not** a stack trace (Python's or Rust's), in at most 6 lines |
-| **pending** | 6 | a valid invocation, so the reference runs the tool. Exactly matchable once the stages exist |
+| **pending** | 0 | a valid invocation, so the reference runs the tool. Exactly matchable once the stages exist |
 
 The traceback class exists because fifteen goldens are reproduced crashes, and the information content
 of `KeyError: (0.08, 0.08)` plus eleven `File "...", line N` frames is "an exception happened". A port
